@@ -649,8 +649,10 @@
 
   let ch = sb.channel("live");
   ["votes", "listings", "viewings", "evaluations", "viewing_photos", "viewing_requests", "app_events"].forEach((t) => { ch = ch.on("postgres_changes", { event: "*", schema: "public", table: t }, () => { clearTimeout(load._t); load._t = setTimeout(load, 300); }); });
-  ch.subscribe();
   document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+  window.addEventListener("focus", () => load());
+  setInterval(() => { if (!document.hidden) load(); }, 30000);   // fallback if the realtime socket drops on the phone
+  ch.subscribe((status) => { if (status === "SUBSCRIBED") console.log("realtime on"); });
   applyTheme(state.theme); renderMe();
   initAuth().then(load);
 })();
