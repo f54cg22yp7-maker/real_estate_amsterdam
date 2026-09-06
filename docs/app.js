@@ -553,7 +553,7 @@
     const p = state.prof; const me = person(state.me);
     const av = (p && p.avatar_url) || me.avatar; const name = (p && p.display_name) || me.name;
     $("#profile-body").innerHTML = `
-      <div class="hero"><img src="${esc(av)}" alt=""><h2>${esc(name)}</h2><div class="sub">${p ? esc(p.email || "") : "Not signed in · guest mode on this phone"}</div></div>
+      <div class="phero"><img src="${esc(av)}" alt=""><h2>${esc(name)}</h2><div class="sub">${p ? esc(p.email || "") : "Not signed in · guest mode on this phone"}</div></div>
       <div class="card-block"><h4>Profile</h4>
         <div class="setting"><div class="l">I am<small>Votes and scores are saved under this name</small></div>
           <div class="segsm">${CFG.people.map((x) => `<button data-person="${x.id}" class="${x.id === state.me ? "active" : ""}"><img src="${esc(x.avatar)}" alt=""> ${esc(x.name)}</button>`).join("")}</div></div>

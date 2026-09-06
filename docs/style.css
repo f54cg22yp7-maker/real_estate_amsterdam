@@ -254,10 +254,10 @@ textarea { min-height: 84px; resize: vertical; }
 .preview { font-size: 13px; white-space: pre-wrap; color: var(--muted); background: var(--panel-2); border-radius: 16px; padding: 12px; max-height: 180px; overflow: auto; }
 
 /* profile & settings */
-.hero { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 10px 0 16px; }
-.hero img { width: 96px; height: 96px; border-radius: 50%; margin-bottom: 10px; }
-.hero h2 { margin: 0; font-size: 26px; font-weight: 800; }
-.hero .sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+.phero { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 10px 0 16px; }
+.phero img { width: 96px; height: 96px; border-radius: 50%; margin-bottom: 10px; }
+.phero h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.phero .sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .setting:last-child { border-bottom: 0; }
 .setting .l { font-weight: 600; } .setting .l small { display: block; color: var(--muted); font-weight: 400; font-size: 12.5px; }
