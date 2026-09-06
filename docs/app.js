@@ -459,15 +459,23 @@
       if (ev === "SIGNED_OUT") { state.prof = null; showAuth(); }
     });
   }
+  let providers = null;   // which sign-in methods the Supabase project has enabled
+  async function loadProviders() {
+    if (providers) return providers;
+    try { const r = await fetch(`${CFG.supabaseUrl}/auth/v1/settings`, { headers: { apikey: CFG.supabaseKey } }); const j = await r.json(); providers = j.external || {}; }
+    catch (e) { providers = {}; }
+    return providers;
+  }
   function showAuth(step) {
     $("#auth").hidden = false;
+    if (!providers) { loadProviders().then(() => { if (!$("#auth").hidden) showAuth(step); }); }
+    const pv = providers || {};
     const g = `<svg viewBox="0 0 24 24"><path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.9h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.4z"/><path fill="#34A853" d="M12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22z"/><path fill="#FBBC05" d="M6.4 14a6 6 0 0 1 0-3.9V7.5H3.1a10 10 0 0 0 0 9l3.3-2.5z"/><path fill="#EA4335" d="M12 6c1.5 0 2.8.5 3.8 1.5l2.8-2.8A10 10 0 0 0 3.1 7.5L6.4 10c.8-2.3 3-4 5.6-4z"/></svg>`;
     const a = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.8 1.3 10.3.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.4-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.8-1-2.8-4.2zM13.9 5c.7-.9 1.2-2.1 1-3.3-1 0-2.3.7-3 1.6-.7.8-1.2 2-1.1 3.2 1.2.1 2.4-.6 3.1-1.5z"/></svg>`;
     $("#auth-body").innerHTML = `
       <img class="logo-big" src="icon-192.png" alt="">
       <h1>Hi, it's Pand</h1><p>Sign in once. Your swipes, viewings and settings follow you on every phone.</p>
-      <div class="oauth"><button data-oauth="google">${g} Google</button><button data-oauth="apple">${a} Apple</button></div>
-      <div class="or">or with your email</div>
+      ${pv.google || pv.apple ? `<div class="oauth">${pv.google ? `<button data-oauth="google">${g} Google</button>` : ""}${pv.apple ? `<button data-oauth="apple">${a} Apple</button>` : ""}</div><div class="or">or with your email</div>` : ""}
       ${step === "code" ? `<p style="margin:0 0 8px">We sent a 6-digit code to <b>${esc(state.authEmail)}</b>. Tapping the link in that email also works.</p>
         <input type="text" class="code" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="000000">
         <button class="primary accent" id="auth-verify" style="margin-top:10px">Sign in</button>

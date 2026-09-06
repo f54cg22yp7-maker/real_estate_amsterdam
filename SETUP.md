@@ -71,3 +71,27 @@ Any other email is asked to pick a person once. Votes keep using the person name
 already swiped stays attached.
 
 "Continue without an account" keeps the old link-only behaviour on that phone.
+
+## 6. Login (optional)
+
+The app works without login: tap "Continue without an account" and pick who you are in settings.
+Login adds identity and lets preferences follow you between phones.
+
+Email code: Supabase only allows editing the email template once you send through your own mail
+server. Authentication > Emails > "Set up SMTP": sender davit.ierusalimski@gmail.com, host
+smtp.gmail.com, port 465, username the same Gmail, password a Google app password
+(https://myaccount.google.com/apppasswords). Then Emails > Magic link or OTP > Source, add
+`<p>Your code: {{ .Token }}</p>` under the sign-in link, Save.
+
+Google sign-in:
+1. https://console.cloud.google.com, new project "Pand".
+2. APIs & Services > OAuth consent screen > External. App name Pand, your Gmail as contact.
+   Test users: both Gmail addresses.
+3. Credentials > Create credentials > OAuth client ID > Web application.
+   Authorised JavaScript origin: https://f54cg22yp7-maker.github.io
+   Authorised redirect URI: https://swqhwoqgjgvzkdlrehjf.supabase.co/auth/v1/callback
+4. Supabase > Authentication > Sign In / Providers > Google: enable, paste Client ID and secret, Save.
+5. Authentication > URL Configuration: Site URL and a Redirect URL both set to
+   https://f54cg22yp7-maker.github.io/real_estate_amsterdam/
+
+The app only shows the Google and Apple buttons once the provider is enabled in Supabase.
