@@ -9,7 +9,7 @@ both swipe right on is a match. Matches flow to a Google Sheet for the weekly re
 
 | Layer | Choice |
 | --- | --- |
-| Ingestion | Claude Routine, every 3h, fresh session, Gmail connector |
+| Ingestion | Claude Routine, every 3h, bound to the session that holds the Gmail connector (see `ROUTINE.md`) |
 | Parsing | `pipeline/parse_email.py` (email) and `pipeline/enrich.py` (landing page) |
 | Database | Supabase Postgres, schema in `supabase/schema.sql`, realtime on `votes` and `listings` |
 | App | Static web app in `docs/`, served by GitHub Pages, added to the iPhone home screen |

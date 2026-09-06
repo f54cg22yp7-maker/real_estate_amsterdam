@@ -50,7 +50,17 @@ def sb_upsert(table, rows, on_conflict="id"):
     if not rows:
         return
     h = dict(H, Prefer="resolution=merge-duplicates,return=minimal")
+    keys = sorted({k for row in rows for k in row})          # PostgREST bulk upsert needs identical keys
+    rows = [{k: row.get(k) for k in keys} for row in rows]
     r = requests.post(f"{SB_URL}/rest/v1/{table}", headers=h, params={"on_conflict": on_conflict}, data=json.dumps(rows), timeout=120)
+    if r.status_code == 400 and ('"42703"' in r.text or '"PGRST204"' in r.text):
+        # Column missing in the database (older schema): drop it and retry once.
+        m = re.search(r"column \w+\.(\w+) does not exist|Could not find the '(\w+)' column", r.text)
+        if m:
+            col = m.group(1) or m.group(2)
+            print(f"  note: column {col} missing in DB, skipping it (run supabase/schema.sql to add)")
+            rows = [{k: v for k, v in row.items() if k != col} for row in rows]
+            r = requests.post(f"{SB_URL}/rest/v1/{table}", headers=h, params={"on_conflict": on_conflict}, data=json.dumps(rows), timeout=120)
     if r.status_code >= 300:
         raise RuntimeError(f"upsert {table} failed {r.status_code}: {r.text[:300]}")
 
@@ -107,7 +117,13 @@ def cmd_ingest(files):
     for oid in new_ids:
         c = cands[oid]
         try:
-            e = enrich(c["url"])
+            cache = os.path.join(ROOT, "inbox", "cache", f"{oid}.json")
+            if os.path.exists(cache):
+                e = json.load(open(cache, encoding="utf-8"))
+            else:
+                e = enrich(c["url"])
+                os.makedirs(os.path.dirname(cache), exist_ok=True)
+                json.dump(e, open(cache, "w", encoding="utf-8"), ensure_ascii=False)
             e["id"] = oid
             ed = parse_sent(c.get("email_sent")) or c.get("email_sent")
             rows.append(to_row(e, email_date=ed if ed and re.match(r"\d{4}-", str(ed)) else None))
@@ -118,8 +134,8 @@ def cmd_ingest(files):
         except Exception as ex:
             failures.append({"id": oid, "url": c["url"], "error": str(ex)})
             print("  ! failed", oid, ex)
-    sb_upsert("listings", rows)
     json.dump({"new": new_out, "failures": failures}, open(os.path.join(ROOT, "new_listings.json"), "w"), ensure_ascii=False, indent=1)
+    sb_upsert("listings", rows)
     print(f"upserted {len(rows)}, failures {len(failures)} -> new_listings.json")
 
 

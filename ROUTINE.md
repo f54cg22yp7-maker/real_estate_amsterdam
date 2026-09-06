@@ -1,8 +1,20 @@
 # Scheduled job (Claude Routine, every 3 hours)
 
-The Routine named "Amsterdam listings ingest" starts a fresh Claude session in the "Real estate"
-cloud environment with the Gmail connector attached and sends it the prompt below. To change the
-behaviour, edit the prompt in the Routine (claude.ai/code, Routines) and keep this file in sync.
+The Routine named "Amsterdam listings ingest" (cron `19 */3 * * *` UTC) wakes the long-running
+Claude session that built this project, in the "Real estate" cloud environment, and sends it the
+prompt below. It is bound to that session rather than starting a fresh one because only that
+session carries the Gmail connector; a fresh-session Routine cannot read the mailbox.
+
+If that session is ever archived or lost, recreate the Routine from a new session that has Gmail
+attached (open claude.ai/code, start a session in the "Real estate" environment, ask it to create a
+self-bound Routine with this prompt). To change the behaviour, edit the prompt in the Routine
+(claude.ai/code, Routines) and keep this file in sync.
+
+Runtime notes:
+- `job.py ingest` caches each fetched listing under `inbox/cache/<id>.json` (gitignored) so a failed
+  upsert does not refetch move.nl.
+- If Supabase rejects a column (older schema), the job drops it and retries once; run
+  `supabase/schema.sql` again in the SQL editor to add the missing column.
 
 ## Prompt
 

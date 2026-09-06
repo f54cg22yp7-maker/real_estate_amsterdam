@@ -84,3 +84,6 @@ begin
     alter publication supabase_realtime add table public.listings;
   end if;
 end $$;
+
+-- Added later: date the agent first listed the property (safe to re-run).
+alter table public.listings add column if not exists listed_since date;
