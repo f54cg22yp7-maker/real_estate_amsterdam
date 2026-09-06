@@ -111,11 +111,10 @@
     const sl = root.querySelector(".slides"); if (!sl) return;
     const dots = root.querySelectorAll(".dots i");
     sl.addEventListener("scroll", () => { const i = Math.round(sl.scrollLeft / sl.clientWidth); dots.forEach((d, k) => d.classList.toggle("on", k === i)); }, { passive: true });
-    let x0 = 0, y0 = 0, moved = false;
-    sl.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; moved = false; }, { passive: true });
-    sl.addEventListener("touchmove", (e) => { if (Math.abs(e.touches[0].clientX - x0) > 8 || Math.abs(e.touches[0].clientY - y0) > 8) moved = true; }, { passive: true });
-    sl.addEventListener("touchend", () => { if (!moved && onTap) onTap(Math.round(sl.scrollLeft / sl.clientWidth)); });
-    sl.addEventListener("click", () => { if (!("ontouchstart" in window) && onTap) onTap(Math.round(sl.scrollLeft / sl.clientWidth)); });
+    let x0 = 0, y0 = 0, down = false;
+    sl.addEventListener("pointerdown", (e) => { x0 = e.clientX; y0 = e.clientY; down = true; });
+    sl.addEventListener("pointercancel", () => (down = false));
+    sl.addEventListener("pointerup", (e) => { const tap = down && Math.abs(e.clientX - x0) < 8 && Math.abs(e.clientY - y0) < 8; down = false; if (tap && onTap) onTap(Math.round(sl.scrollLeft / sl.clientWidth)); });
   }
   function renderDeck() {
     const deck = $("#deck"), q = queue();
