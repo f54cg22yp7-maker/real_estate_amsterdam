@@ -6,7 +6,7 @@
   const $ = (s) => document.querySelector(s);
   const state = { listings: [], votes: [], viewings: {}, evals: {}, photos: {}, requests: [], me: localStorage.getItem("who") || CFG.people[0].id,
     view: "swipe", savedTab: "likes", lastVote: null, bigmap: null, profile: null, sheetId: null, evalId: null, picks: new Set(),
-    session: null, user: null, prof: null, theme: localStorage.getItem("theme") || "system", weeklyTarget: +localStorage.getItem("weeklyTarget") || CFG.weeklyTarget, authEmail: "" };
+    session: null, user: null, prof: null, prefs: null, theme: localStorage.getItem("theme") || "system", weeklyTarget: +localStorage.getItem("weeklyTarget") || CFG.weeklyTarget, authEmail: "" };
   const other = () => CFG.people.find((p) => p.id !== state.me).id;
   const person = (id) => CFG.people.find((p) => p.id === id) || { id, name: id, avatar: "" };
   const nameOf = (id) => person(id).name;
@@ -32,7 +32,8 @@
   function isMatch(l) { return CFG.people.every((p) => (voteOf(l.id, p.id) || {}).vote === "yes"); }
   function viewing(id) { return state.viewings[id]; }
   function evalOf(id, who) { return state.evals[id + ":" + who]; }
-  function fit(l) { return window.Affinity.score(l, state.profile); }
+  function fit(l) { return window.Affinity.score(l, state.profile, state.prefs); }
+  const img = (u, w, h) => (u || "").replace(/width=\d+/, "width=" + w).replace(/height=\d+/, "height=" + h);
   function queue() { return state.listings.filter((l) => !HIDDEN.has(l.status) && !voteOf(l.id, state.me)); }
   function isoWeek(d) { d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const day = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() + 4 - day); const y0 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1)); return `${d.getUTCFullYear()}-W${String(Math.ceil((((d - y0) / 864e5) + 1) / 7)).padStart(2, "0")}`; }
   function statusBadge(l) {
@@ -85,8 +86,8 @@
   function cardHtml(l) {
     const f = fit(l); const ph = photosOf(l, 4);
     return `
-      <div class="photo" data-idx="0" data-n="${ph.length}">
-        <div class="slides">${ph.map((p) => `<img src="${esc(p)}" alt="" draggable="false">`).join("")}</div>
+      <div class="hero">
+        <div class="slides" data-n="${ph.length}">${ph.map((p) => `<img src="${esc(img(p, 1200, 800))}" alt="" draggable="false">`).join("")}</div>
         ${ph.length > 1 ? `<div class="dots">${ph.map((_, i) => `<i class="${i === 0 ? "on" : ""}"></i>`).join("")}</div>` : ""}
         ${statusBadge(l)}${f != null ? `<div class="fit">${f}% fit</div>` : ""}
         <div class="stamp yes">LIKE</div><div class="stamp no">PASS</div>
@@ -98,35 +99,39 @@
         </div>
       </div>
       <div class="body">
-        <div class="hint"><span>Tap photo to flip through · tap here for the full profile</span></div>
+        <div class="hint"><span>Swipe right to like, left to pass · scroll for more · tap for the full profile</span></div>
         <div class="chips">${chipsHtml(l)}</div>
         <div class="minimap" id="mm-${l.id}"></div>
         ${kvHtml(l)}
         <div class="summary">${esc(l.summary || (l.description_en || "").slice(0, 220) || "")}</div>
-        <div class="links"><button class="dark" data-open="${l.id}">Full profile</button><a href="${esc(l.url)}" target="_blank" rel="noopener">move.nl listing</a></div>
+        <div class="links"><button class="dark" data-open="${l.id}">Full profile & photos</button><a href="${esc(l.url)}" target="_blank" rel="noopener">move.nl listing</a></div>
       </div>`;
   }
-  function stepPhoto(photoEl, dir) {
-    const n = +photoEl.dataset.n || 1; if (n < 2) return;
-    let i = (+photoEl.dataset.idx + dir + n) % n; photoEl.dataset.idx = i;
-    photoEl.querySelector(".slides").style.transform = `translateX(-${i * 100}%)`;
-    photoEl.querySelectorAll(".dots i").forEach((d, k) => d.classList.toggle("on", k === i));
+  function attachSlides(root, onTap) {
+    const sl = root.querySelector(".slides"); if (!sl) return;
+    const dots = root.querySelectorAll(".dots i");
+    sl.addEventListener("scroll", () => { const i = Math.round(sl.scrollLeft / sl.clientWidth); dots.forEach((d, k) => d.classList.toggle("on", k === i)); }, { passive: true });
+    let x0 = 0, y0 = 0, moved = false;
+    sl.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; moved = false; }, { passive: true });
+    sl.addEventListener("touchmove", (e) => { if (Math.abs(e.touches[0].clientX - x0) > 8 || Math.abs(e.touches[0].clientY - y0) > 8) moved = true; }, { passive: true });
+    sl.addEventListener("touchend", () => { if (!moved && onTap) onTap(Math.round(sl.scrollLeft / sl.clientWidth)); });
+    sl.addEventListener("click", () => { if (!("ontouchstart" in window) && onTap) onTap(Math.round(sl.scrollLeft / sl.clientWidth)); });
   }
   function renderDeck() {
     const deck = $("#deck"), q = queue();
     $("#count").textContent = q.length ? `${q.length} to go` : "";
     deck.innerHTML = "";
-    if (!q.length) { deck.innerHTML = `<div class="empty"><h2>All caught up</h2><div>New places land every few hours. Check Saved and Viewings meanwhile.</div></div>`; $("#actions").style.visibility = "hidden"; return; }
+    if (!q.length) { deck.innerHTML = `<div class="empty"><h2>All caught up</h2><div>New places land every few hours. Check Saved and Viewings meanwhile.</div>${window.Affinity.hasPrefs(state.prefs) ? "" : `<button class="pill ink" data-prefs="1" style="border:0;padding:10px 16px;margin-top:14px">Tune the % fit</button>`}</div>`; $("#actions").style.visibility = "hidden"; return; }
     $("#actions").style.visibility = "visible";
     q.slice(0, 2).reverse().forEach((l, i, arr) => {
       const c = document.createElement("div"); c.className = "card" + (i < arr.length - 1 ? " behind" : ""); c.dataset.id = l.id; c.innerHTML = cardHtml(l); deck.appendChild(c);
-      if (i === arr.length - 1) { attachDrag(c, l); mountMap(document.getElementById(`mm-${l.id}`), l, { zoom: 13, radius: 400 }); }
+      if (i === arr.length - 1) { attachDrag(c, l); attachSlides(c, () => openSheet(l.id)); mountMap(document.getElementById(`mm-${l.id}`), l, { zoom: 14, radius: 350, interactive: true }); }
     });
   }
   function attachDrag(card, l) {
     let sx = 0, sy = 0, dx = 0, dy = 0, dragging = false, decided = null, t0 = 0, target = null;
     const yes = card.querySelector(".stamp.yes"), no = card.querySelector(".stamp.no");
-    const onDown = (e) => { if (e.target.closest("button,a,.leaflet-container")) return; const p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY; dx = dy = 0; dragging = true; decided = null; t0 = Date.now(); target = e.target; card.style.transition = "none"; };
+    const onDown = (e) => { if (e.target.closest("button,a,.leaflet-container,.slides")) return; const p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY; dx = dy = 0; dragging = true; decided = null; t0 = Date.now(); target = e.target; card.style.transition = "none"; };
     const onMove = (e) => {
       if (!dragging) return; const p = e.touches ? e.touches[0] : e; dx = p.clientX - sx; dy = p.clientY - sy;
       if (decided === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) decided = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
@@ -138,11 +143,7 @@
       if (!dragging) return; dragging = false;
       if (decided === "h" && Math.abs(dx) > 100) return fly(card, dx > 0 ? "yes" : "no", l);
       card.style.transition = "transform .25s"; card.style.transform = ""; yes.style.opacity = no.style.opacity = 0;
-      if (decided === null && Date.now() - t0 < 400 && target) {           // a tap
-        const photo = target.closest(".photo");
-        if (photo) { const r = photo.getBoundingClientRect(); stepPhoto(photo, sx - r.left < r.width / 3 ? -1 : 1); }
-        else if (target.closest(".body")) openSheet(l.id);
-      }
+      if (decided === null && Date.now() - t0 < 400 && target && target.closest(".body")) openSheet(l.id);   // a tap
     };
     card.addEventListener("touchstart", onDown, { passive: true }); card.addEventListener("touchmove", onMove, { passive: false }); card.addEventListener("touchend", onUp);
     card.addEventListener("mousedown", onDown); window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
@@ -295,7 +296,8 @@
     const me = (voteOf(l.id, state.me) || {}).vote, th = voteOf(l.id, other()); const v = viewing(l.id); const stage = v && v.stage !== "dropped" ? v.stage : null;
     const stepIdx = stage ? STAGES.indexOf(stage) : -1;
     $("#sheet-body").innerHTML = `
-      <div class="gallery">${photosOf(l).map((p) => `<img src="${esc(p)}" loading="lazy" alt="">`).join("")}</div>
+      <div class="galwrap"><div class="gallery slides" data-n="${photosOf(l).length}">${photosOf(l).map((p, i) => `<img src="${esc(img(p, 1200, 800))}" ${i > 2 ? 'loading="lazy"' : ""} alt="">`).join("")}</div>
+        <div class="galhint">Tap to view full screen</div><div class="galcount" id="galcount">1 / ${photosOf(l).length}</div></div>
       <div class="detail-price">${eur(l.price)}<small>${l.price_per_m2 ? eur(l.price_per_m2) + "/m²" : ""}${fit(l) != null ? " · " + fit(l) + "% fit" : ""}</small></div>
       <div class="detail-addr">${esc(l.address || "")}</div>
       <div class="detail-area">${esc(area(l))} · ${esc(l.status || "available")}${l.listed_since ? " · listed " + esc(l.listed_since) : ""}</div>
@@ -322,7 +324,15 @@
         <div class="links"><a class="dark" href="${esc(l.url)}" target="_blank" rel="noopener">Open on move.nl</a></div>
       </div>`;
     mountMap($("#sheet-map"), l, { zoom: 14, interactive: true, radius: 350 });
+    const gal = $("#sheet-body .gallery"); if (gal) { gal.addEventListener("scroll", () => { $("#galcount").textContent = `${Math.round(gal.scrollLeft / gal.clientWidth) + 1} / ${photosOf(l).length}`; }, { passive: true }); attachSlides($("#sheet-body .galwrap"), (i) => openLightbox(photosOf(l), i)); }
     const more = $("#desc-more"); if (more) more.onclick = () => { $("#desc").classList.toggle("clamp"); more.textContent = $("#desc").classList.contains("clamp") ? "Read more" : "Show less"; };
+  }
+  function openLightbox(photos, idx) {
+    const lb = $("#lightbox"), tr = $("#lb-track");
+    tr.innerHTML = photos.map((p) => `<img src="${esc(img(p, 1920, 1280))}" alt="">`).join("");
+    lb.hidden = false; tr.scrollLeft = idx * tr.clientWidth; $("#lb-count").textContent = `${idx + 1} / ${photos.length}`;
+    tr.onscroll = () => { $("#lb-count").textContent = `${Math.round(tr.scrollLeft / tr.clientWidth) + 1} / ${photos.length}`; };
+    attachSlides({ querySelector: (q) => (q === ".slides" ? tr : null), querySelectorAll: () => [] }, () => (lb.hidden = true));
   }
   async function setStage(id, stage) {
     const now = new Date().toISOString(); const prev = viewing(id) || {};
@@ -501,6 +511,44 @@
     const { error } = await sb.auth.signInWithOAuth({ provider, options: { redirectTo: location.origin + location.pathname } });
     if (error) { console.error(error); toast(`${provider} sign-in is not enabled yet`); }
   }
+  /* ---------- Preferences questionnaire (shared by both) ---------- */
+  const PRIOS = [["location", "Neighbourhood"], ["outdoor", "Outdoor space"], ["size", "Size"], ["price", "Price"], ["energy", "Energy label"], ["ownership", "Freehold / paid-off lease"]];
+  function allAreas() { const seen = [...new Set(Object.values(window.AREAS || {}))]; const groups = {}; seen.forEach((a) => { const d = a.split(/ \(|\//)[0].trim(); (groups[d] = groups[d] || []).push(a); }); return groups; }
+  function openPrefs() { renderPrefs(); $("#prefs").hidden = false; }
+  function renderPrefs() {
+    const q = state.prefs || {}; const opt = (key, vals) => `<div class="opts">${vals.map(([v, lab]) => `<button data-pref-key="${key}" data-pref-val="${v}" class="${String(q[key] == null ? "any" : q[key]) === v ? "on" : ""}">${lab}</button>`).join("")}</div>`;
+    const groups = allAreas(); const pr = q.priorities || [];
+    $("#prefs-body").innerHTML = `
+      <p style="margin:6px 2px 12px;color:var(--muted);font-size:13.5px">Ten quick questions. Answers are shared between you two and drive the "% fit" on every card, together with what you actually like. Change them any time.</p>
+      <div class="stack">
+        <div class="q"><h4>1. Budget <span class="val" id="v-budget">${q.budget ? eur(q.budget) : "no limit"}</span></h4><p>Maximum asking price you would consider.</p><input type="range" id="r-budget" min="400000" max="1500000" step="25000" value="${q.budget || 1500000}"></div>
+        <div class="q"><h4>2. Minimum size <span class="val" id="v-m2">${q.min_m2 ? q.min_m2 + " m²" : "any"}</span></h4><p>Living area below which it is a no.</p><input type="range" id="r-m2" min="40" max="150" step="5" value="${q.min_m2 || 40}"></div>
+        <div class="q"><h4>3. Bedrooms</h4><p>Minimum number of real bedrooms.</p>${opt("min_bedrooms", [["any", "Any"], ["1", "1+"], ["2", "2+"], ["3", "3+"]])}</div>
+        <div class="q"><h4>4. Outdoor space</h4><p>Balcony, terrace or garden.</p>${opt("outdoor", [["must", "Must have"], ["nice", "Nice to have"], ["any", "Don't care"]])}</div>
+        <div class="q"><h4>5. Neighbourhoods you love</h4><p>Pick as many as you like. Listings there score highest, the rest of the same district scores medium.</p>
+          <div class="opts">${Object.entries(groups).map(([d, list]) => `<span class="grp">${esc(d)}</span>` + list.map((a) => `<button data-area="${esc(a)}" class="${(q.areas || []).includes(a) ? "on" : ""}">${esc(a.replace(d, "").replace(/^[ (\/]+|[)]+$/g, "") || d)}</button>`).join("")).join("")}</div></div>
+        <div class="q"><h4>6. Ownership</h4><p>Freehold or a lease that is paid off forever means no ground rent surprises.</p>${opt("ownership", [["only", "Freehold or paid-off only"], ["prefer", "Prefer, not required"], ["any", "Don't care"]])}</div>
+        <div class="q"><h4>7. Energy label</h4><p>Lower labels mean higher bills and possible insulation work.</p>${opt("energy", [["AB", "A or B"], ["C", "C or better"], ["any", "Don't care"]])}</div>
+        <div class="q"><h4>8. Floor</h4>${opt("floor", [["ground", "Ground floor with garden"], ["upper", "Upper floor"], ["top", "Top floor"], ["any", "Don't care"]])}</div>
+        <div class="q"><h4>9. Building era</h4>${opt("era", [["prewar", "Pre-war character"], ["modern", "Modern (1990+)"], ["any", "Don't care"]])}</div>
+        <div class="q"><h4>10. Max VvE per month</h4>${opt("max_vve", [["any", "Any"], ["150", "€150"], ["250", "€250"], ["400", "€400"]])}</div>
+        <div class="q"><h4>Top 3 priorities</h4><p>Tap in order of importance. These get extra weight.</p>
+          <div class="opts">${PRIOS.map(([k, lab]) => { const i = pr.indexOf(k); return `<button data-prio="${k}" class="${i >= 0 ? "on" : ""}">${i >= 0 ? `<b>${i + 1}</b>` : ""}${lab}</button>`; }).join("")}</div></div>
+        <button class="primary danger" id="prefs-reset">Clear all answers</button>
+      </div>`;
+    $("#r-budget").addEventListener("input", (e) => { $("#v-budget").textContent = +e.target.value >= 1500000 ? "no limit" : eur(+e.target.value); });
+    $("#r-budget").addEventListener("change", (e) => savePrefs({ budget: +e.target.value >= 1500000 ? null : +e.target.value }));
+    $("#r-m2").addEventListener("input", (e) => { $("#v-m2").textContent = +e.target.value <= 40 ? "any" : e.target.value + " m²"; });
+    $("#r-m2").addEventListener("change", (e) => savePrefs({ min_m2: +e.target.value <= 40 ? null : +e.target.value }));
+  }
+  let prefsTimer = null;
+  function savePrefs(patch) {
+    state.prefs = { ...(state.prefs || {}), ...patch }; const top = $("#prefs-body").scrollTop; renderPrefs(); $("#prefs-body").scrollTop = top; $("#prefs-saved").textContent = "Saving…";
+    clearTimeout(prefsTimer); prefsTimer = setTimeout(async () => {
+      const { error } = await sb.from("app_events").upsert({ key: "couple_prefs", at: new Date().toISOString(), data: state.prefs }, { onConflict: "key" });
+      $("#prefs-saved").textContent = error ? "Not saved" : "Saved"; if (error) console.error(error); renderAll();
+    }, 400);
+  }
   function openProfile() { renderProfile(); $("#profile").hidden = false; }
   function renderProfile() {
     const p = state.prof; const me = person(state.me);
@@ -514,6 +562,9 @@
       </div>
       <div class="card-block" style="margin-top:10px"><h4>Appearance</h4>
         <div class="setting"><div class="l">Theme</div><div class="segsm">${["system", "light", "dark"].map((t) => `<button data-theme="${t}" class="${state.theme === t ? "active" : ""}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</div></div>
+      </div>
+      <div class="card-block" style="margin-top:10px"><h4>Fit</h4>
+        <div class="setting"><div class="l">What fits you<small>${window.Affinity.hasPrefs(state.prefs) ? "Answered · drives the % fit with your likes" : "10 questions to tune the % fit"}</small></div><button class="pill ink" data-prefs="1" style="border:0;padding:8px 14px">${window.Affinity.hasPrefs(state.prefs) ? "Edit" : "Start"}</button></div>
       </div>
       <div class="card-block" style="margin-top:10px"><h4>Viewings</h4>
         <div class="setting"><div class="l">Weekly target<small>How many viewings to request per week</small></div><div class="segsm">${[3, 5, 8].map((n) => `<button data-target="${n}" class="${state.weeklyTarget === n ? "active" : ""}">${n}</button>`).join("")}</div></div>
@@ -533,13 +584,14 @@
 
   async function load() {
     const q = (t, sel, ord) => { let x = sb.from(t).select(sel || "*"); if (ord) x = x.order(ord, { ascending: false }); return x; };
-    const [ls, vs, vw, ev, ph, rq] = await Promise.all([q("listings", "*", "first_seen"), q("votes"), q("viewings"), q("evaluations"), q("viewing_photos"), q("viewing_requests")]);
+    const [ls, vs, vw, ev, ph, rq, pf] = await Promise.all([q("listings", "*", "first_seen"), q("votes"), q("viewings"), q("evaluations"), q("viewing_photos"), q("viewing_requests"), sb.from("app_events").select("data").eq("key", "couple_prefs").maybeSingle()]);
     if (ls.error || vs.error) { toast("Cannot reach database"); console.error(ls.error || vs.error); return; }
     state.listings = ls.data || []; state.votes = vs.data || [];
     state.viewings = {}; (vw.data || []).forEach((v) => (state.viewings[v.listing_id] = v));
     state.evals = {}; (ev.data || []).forEach((e) => (state.evals[e.listing_id + ":" + e.who] = e));
     state.photos = {}; (ph.data || []).forEach((p) => (state.photos[p.listing_id] = state.photos[p.listing_id] || []).push(p));
     state.requests = rq.data || [];
+    if (pf && pf.data && pf.data.data) state.prefs = pf.data.data;
     recomputeProfile(); renderAll(); maybeSaturday();
   }
   function maybeSaturday() {
@@ -567,6 +619,12 @@
     const pp = t.closest("[data-person]"); if (pp) { state.me = pp.dataset.person; localStorage.setItem("who", state.me); state.lastVote = null; saveProfile({ person: state.me }); renderProfile(); renderAll(); return; }
     const th = t.closest("[data-theme]"); if (th && !$("#profile").hidden) { applyTheme(th.dataset.theme); saveProfile({ theme: th.dataset.theme }); renderProfile(); if (state.bigmap) renderBigMap(); return; }
     const tg = t.closest("[data-target]"); if (tg) { state.weeklyTarget = +tg.dataset.target; localStorage.setItem("weeklyTarget", state.weeklyTarget); saveProfile({ prefs: { ...((state.prof || {}).prefs || {}), weeklyTarget: state.weeklyTarget } }); renderProfile(); renderViewings(); return; }
+    if (t.closest("[data-prefs]")) { $("#profile").hidden = true; openPrefs(); return; }
+    if (t.closest("[data-lb-close]")) { $("#lightbox").hidden = true; return; }
+    const pk2 = t.closest("[data-pref-key]"); if (pk2) { const k = pk2.dataset.prefKey, v = pk2.dataset.prefVal; savePrefs({ [k]: v === "any" ? null : (isNaN(+v) ? v : +v) }); return; }
+    const ar = t.closest("[data-area]"); if (ar) { const a = ar.dataset.area; const cur = (state.prefs || {}).areas || []; savePrefs({ areas: cur.includes(a) ? cur.filter((x) => x !== a) : [...cur, a] }); return; }
+    const po = t.closest("[data-prio]"); if (po) { const k = po.dataset.prio; const old = (state.prefs || {}).priorities || []; savePrefs({ priorities: old.includes(k) ? old.filter((x) => x !== k) : old.length >= 3 ? old : [...old, k] }); return; }
+    if (t.closest("#prefs-reset")) { state.prefs = {}; savePrefs({}); return; }
     if (t.closest("#signout")) { sb.auth.signOut(); $("#profile").hidden = true; return; }
     if (t.closest("#signin")) { $("#profile").hidden = true; showAuth(); return; }
     if (t.closest("#auth-send")) { authSend(); return; } if (t.closest("#auth-verify")) { authVerify(); return; } if (t.closest("#auth-back")) { showAuth(); return; }
@@ -580,12 +638,12 @@
   $("#btn-no").onclick = () => { const [c, l] = topCard(); if (l) fly(c, "no", l); };
   $("#btn-info").onclick = () => { const [, l] = topCard(); if (l) openSheet(l.id); };
   $("#btn-undo").onclick = undo;
-  document.addEventListener("keydown", (e) => { if (e.target.matches("input,textarea")) return; if (!$("#sheet").hidden || !$("#eval").hidden || !$("#weekly").hidden || !$("#profile").hidden) { if (e.key === "Escape") { ["sheet", "eval", "weekly", "profile"].forEach((id) => ($("#" + id).hidden = true)); } return; }
+  document.addEventListener("keydown", (e) => { if (e.target.matches("input,textarea")) return; if (!$("#sheet").hidden || !$("#eval").hidden || !$("#weekly").hidden || !$("#profile").hidden || !$("#prefs").hidden) { if (e.key === "Escape") { ["sheet", "eval", "weekly", "profile", "prefs", "lightbox"].forEach((id) => ($("#" + id).hidden = true)); } return; }
     if (e.key === "ArrowRight") $("#btn-yes").click(); if (e.key === "ArrowLeft") $("#btn-no").click(); });
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (state.theme === "system") applyTheme("system"); });
 
   let ch = sb.channel("live");
-  ["votes", "listings", "viewings", "evaluations", "viewing_photos", "viewing_requests"].forEach((t) => { ch = ch.on("postgres_changes", { event: "*", schema: "public", table: t }, () => { clearTimeout(load._t); load._t = setTimeout(load, 300); }); });
+  ["votes", "listings", "viewings", "evaluations", "viewing_photos", "viewing_requests", "app_events"].forEach((t) => { ch = ch.on("postgres_changes", { event: "*", schema: "public", table: t }, () => { clearTimeout(load._t); load._t = setTimeout(load, 300); }); });
   ch.subscribe();
   document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
   applyTheme(state.theme); renderMe();

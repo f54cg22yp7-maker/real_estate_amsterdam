@@ -216,6 +216,8 @@ def cmd_shortlist():
     people = ["davit", "luis"]
     liked = [ls[i] for i, votes in by.items() if i in ls and any(v["vote"] == "yes" for v in votes.values())]
     prof = aff_profile(liked)
+    pref_rows = sb_get("app_events", {"select": "data", "key": "eq.couple_prefs"})
+    prefs = (pref_rows[0].get("data") if pref_rows else None) or None
     out = []
     for lid, votes in by.items():
         l = ls.get(lid)
@@ -225,7 +227,7 @@ def cmd_shortlist():
         if not likes:
             continue
         match = len(likes) == len(people)
-        aff = aff_score(l, prof) or 0
+        aff = aff_score(l, prof, prefs) or 0
         evs = ev.get(lid, {})
         def avg(e):
             sc = [v for v in (e.get("scores") or {}).values() if isinstance(v, (int, float))]
