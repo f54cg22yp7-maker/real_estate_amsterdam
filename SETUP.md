@@ -95,3 +95,13 @@ Google sign-in:
    https://f54cg22yp7-maker.github.io/real_estate_amsterdam/
 
 The app only shows the Google and Apple buttons once the provider is enabled in Supabase.
+
+## 7. Fit score
+
+Settings > Preferences > "What fits you": 14 questions answered once for the couple (budget, minimum
+size and bedrooms, outdoor space, loved neighbourhoods, ownership, energy label, floor, era, VvE cap,
+price per m² cap, an anchor place with a max distance, lift, parking) plus the top 3 priorities.
+Answers live in the `app_events` row `couple_prefs` and are used by both the app (`docs/affinity.js`)
+and the job (`pipeline/affinity.py`, identical logic) for the "% fit" on cards and in the shortlist.
+Until there are 5 likes the score is the answers alone; after that it is 60% answers, 40% learned from
+what you both liked (neighbourhood, size, price per m², ownership, outdoor, label, bedrooms).
