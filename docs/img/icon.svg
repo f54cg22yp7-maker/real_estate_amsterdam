@@ -1,40 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <clipPath id="l"><circle cx="170" cy="270" r="110"/></clipPath>
-    <clipPath id="d"><circle cx="342" cy="270" r="110"/></clipPath>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="#EFE6D6"/>
-  <!-- gable roofline, the Amsterdam 'pand' -->
-  <path d="M96 128 L256 44 L416 128" fill="none" stroke="#1C2B4A" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- Luis, left, navy disc -->
-  <circle cx="170" cy="270" r="110" fill="#1C2B4A"/>
-  <g clip-path="url(#l)"><g transform="translate(60 160) scale(1.8333)" stroke="#16213A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
-    <path d="M8 128 C10 96 30 86 60 86 C90 86 110 96 112 128 Z" fill="#F6F1E7"/>
-    <path d="M52 88 L60 100 L68 88" fill="none"/>
-    <path d="M50 70 L50 88 L70 88 L70 70 Z" fill="#E6BE98"/>
-    <path d="M38 48 C38 30 48 22 60 22 C72 22 82 30 82 48 C82 64 74 78 60 78 C46 78 38 64 38 48 Z" fill="#EBC6A2"/>
-    <path d="M36 50 C33 34 40 18 58 17 C72 16 84 22 86 36 C87 42 84 46 82 46 C80 38 74 32 66 32 C60 32 56 36 50 38 C44 40 40 46 40 52 C38 52 37 51 36 50 Z" fill="#1F1A17"/>
-    <path d="M46 46 C50 43 55 43 58 45" fill="none"/><path d="M63 45 C66 43 71 43 75 46" fill="none"/>
-    <circle cx="52" cy="51" r="2" fill="#16213A" stroke="none"/><circle cx="69" cy="51" r="2" fill="#16213A" stroke="none"/>
-    <path d="M60 52 C59 57 58 60 61 61" fill="none"/>
-    <path d="M51 66 C55 71 65 71 69 66" fill="#FFFDF9"/>
-  </g></g>
-  <!-- Davit, right, sand disc, in front -->
-  <circle cx="342" cy="270" r="116" fill="#EFE6D6"/>
-  <circle cx="342" cy="270" r="110" fill="#D9CDB4"/>
-  <g clip-path="url(#d)"><g transform="translate(232 160) scale(1.8333)" stroke="#16213A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
-    <path d="M6 128 C8 96 28 84 60 84 C92 84 112 96 114 128 Z" fill="#A69B7B"/>
-    <path d="M30 96 C36 86 44 84 52 86" fill="none"/><path d="M90 96 C84 86 76 84 68 86" fill="none"/>
-    <path d="M48 86 C52 96 68 96 72 86 L72 92 C68 100 52 100 48 92 Z" fill="#F6F1E7"/>
-    <path d="M50 70 L50 88 L70 88 L70 70 Z" fill="#CFA07A"/>
-    <path d="M38 47 C38 30 48 23 60 23 C72 23 82 30 82 47 C82 63 74 78 60 78 C46 78 38 63 38 47 Z" fill="#D9A986"/>
-    <path d="M37 46 C36 30 46 19 60 19 C74 19 84 30 83 46 C81 38 74 32 60 32 C46 32 39 38 37 46 Z" fill="#2A221E"/>
-    <path d="M45 45 C50 42 55 42 58 44" fill="none" stroke-width="2.6"/><path d="M62 44 C65 42 70 42 75 45" fill="none" stroke-width="2.6"/>
-    <circle cx="52" cy="51" r="2" fill="#16213A" stroke="none"/><circle cx="69" cy="51" r="2" fill="#16213A" stroke="none"/>
-    <path d="M60 52 C59 57 58 60 61 61" fill="none"/>
-    <path d="M52 64 C55 61 58 62 60 63 C62 62 65 61 68 64 C65 66 55 66 52 64 Z" fill="#2A221E"/>
-    <path d="M54 68 C57 70 63 70 66 68" fill="none"/>
-    <path d="M55 73 C57 77 63 77 65 73 C63 75 57 75 55 73 Z" fill="#2A221E"/>
-  </g></g>
-  <text x="256" y="452" text-anchor="middle" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="64" font-weight="700" fill="#1C2B4A" letter-spacing="-2">Pand</text>
+  <rect width="512" height="512" rx="120" fill="#121212"/>
+  <!-- Luis, lime -->
+  <circle cx="190" cy="256" r="128" fill="#D8F36A"/>
+  <g fill="none" stroke="#121212" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M126 240 C126 192 156 174 194 178 C224 180 246 198 250 226"/>
+    <path d="M178 182 C196 174 220 178 232 194"/>
+    <circle cx="162" cy="252" r="8" fill="#121212" stroke="none"/>
+    <circle cx="218" cy="252" r="8" fill="#121212" stroke="none"/>
+    <path d="M156 290 C170 316 212 316 226 290"/>
+  </g>
+  <!-- Davit, lilac, in front -->
+  <circle cx="322" cy="256" r="140" fill="#121212"/>
+  <circle cx="322" cy="256" r="128" fill="#CDBDFF"/>
+  <g fill="none" stroke="#121212" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M258 226 C266 188 300 176 322 176 C344 176 378 188 386 226"/>
+    <circle cx="294" cy="252" r="8" fill="#121212" stroke="none"/>
+    <circle cx="350" cy="252" r="8" fill="#121212" stroke="none"/>
+    <path d="M296 286 C306 276 316 280 322 284 C328 280 338 276 348 286"/>
+    <path d="M300 304 C310 314 334 314 344 304"/>
+    <path d="M312 332 L332 332"/>
+  </g>
 </svg>

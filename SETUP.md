@@ -49,3 +49,25 @@ Ranking: matches first, then affinity descending.
 4. At the viewing open the listing > **Start viewing evaluation**: slide the 1-5 scores per category,
    tick the checklist, pick a verdict, add notes and photos. Each of you scores separately; the other
    person's marks show as small dots. Saved live, and the listing moves to **Viewed**.
+
+## 6. Login (Supabase Auth)
+
+Run `supabase/schema.sql` again first (v3 adds the `profiles` table). Then in the Supabase dashboard:
+
+1. **Authentication > URL configuration**: Site URL `https://f54cg22yp7-maker.github.io/real_estate_amsterdam/`
+   and add the same URL under Redirect URLs.
+2. **Authentication > Email templates > Magic Link**: add the line `Your code: {{ .Token }}` to the
+   template body. Without it the email only contains a link; the link works too, but opens in Safari
+   rather than in the home-screen app, so the 6-digit code is the smoother path on iPhone.
+3. Optional, **Google**: Authentication > Providers > Google > enable, paste a Google OAuth client ID
+   and secret from console.cloud.google.com (Credentials > OAuth client > Web application, with
+   `https://swqhwoqgjgvzkdlrehjf.supabase.co/auth/v1/callback` as authorised redirect URI).
+4. Optional, **Apple**: needs an Apple Developer account (paid) plus a Services ID and key;
+   Authentication > Providers > Apple. Until enabled the Apple button shows "not enabled yet".
+
+Who is who: the app maps the signed-in email to a person using `people[].emails` in `docs/config.js`
+(Davit: davit.ierusalimski@gmail.com and davit.muradyan@outlook.com, Luis: luisgerardo.mtz@gmail.com).
+Any other email is asked to pick a person once. Votes keep using the person name, so everything
+already swiped stays attached.
+
+"Continue without an account" keeps the old link-only behaviour on that phone.

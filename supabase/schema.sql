@@ -175,3 +175,32 @@ create policy viewing_photos_upload on storage.objects for insert to anon, authe
   with check (bucket_id = 'viewing-photos');
 create policy viewing_photos_read   on storage.objects for select to anon, authenticated
   using (bucket_id = 'viewing-photos');
+
+-- ---------------------------------------------------------------------------
+-- v3: login (Supabase Auth) and profiles. Safe to re-run.
+-- Each signed-in user gets one profile row that says which person they are (davit / luis),
+-- their display name, avatar and app preferences (theme etc.).
+-- ---------------------------------------------------------------------------
+create table if not exists public.profiles (
+  id           uuid primary key references auth.users(id) on delete cascade,
+  email        text,
+  person       text check (person in ('davit','luis')),
+  display_name text,
+  avatar_url   text,
+  theme        text default 'system' check (theme in ('system','light','dark')),
+  prefs        jsonb not null default '{}'::jsonb,
+  updated_at   timestamptz not null default now()
+);
+alter table public.profiles enable row level security;
+drop policy if exists profiles_read   on public.profiles;
+drop policy if exists profiles_insert on public.profiles;
+drop policy if exists profiles_update on public.profiles;
+create policy profiles_read   on public.profiles for select to anon, authenticated using (true);
+create policy profiles_insert on public.profiles for insert to authenticated with check (auth.uid() = id);
+create policy profiles_update on public.profiles for update to authenticated using (auth.uid() = id) with check (auth.uid() = id);
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'profiles') then
+    alter publication supabase_realtime add table public.profiles;
+  end if;
+end $$;

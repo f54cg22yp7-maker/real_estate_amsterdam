@@ -1,29 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
-  <defs><clipPath id="c"><circle cx="60" cy="60" r="58"/></clipPath></defs>
-  <circle cx="60" cy="60" r="58" fill="#1C2B4A"/>
-  <g clip-path="url(#c)" stroke="#16213A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
-    <!-- shoulders / white henley -->
-    <path d="M8 128 C10 96 30 86 60 86 C90 86 110 96 112 128 Z" fill="#F6F1E7"/>
-    <path d="M52 88 L60 100 L68 88" fill="none"/>
-    <circle cx="60" cy="98" r="1.4" fill="#16213A" stroke="none"/>
-    <circle cx="60" cy="105" r="1.4" fill="#16213A" stroke="none"/>
-    <!-- neck -->
-    <path d="M50 70 L50 88 L70 88 L70 70 Z" fill="#E6BE98"/>
-    <!-- head -->
-    <path d="M38 48 C38 30 48 22 60 22 C72 22 82 30 82 48 C82 64 74 78 60 78 C46 78 38 64 38 48 Z" fill="#EBC6A2"/>
-    <!-- hair: wavy, swept to his left -->
-    <path d="M36 50 C33 34 40 18 58 17 C72 16 84 22 86 36 C87 42 84 46 82 46 C80 38 74 32 66 32 C60 32 56 36 50 38 C44 40 40 46 40 52 C38 52 37 51 36 50 Z" fill="#1F1A17"/>
-    <path d="M60 22 C66 20 76 22 80 30" fill="none" stroke="#3A302A"/>
-    <!-- brows -->
-    <path d="M46 46 C50 43 55 43 58 45" fill="none"/>
-    <path d="M63 45 C66 43 71 43 75 46" fill="none"/>
+  <circle cx="60" cy="60" r="60" fill="#D8F36A"/>
+  <g fill="none" stroke="#121212" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- swept wavy hair -->
+    <path d="M30 52 C30 30 44 22 62 24 C76 25 86 33 88 46"/>
+    <path d="M54 26 C62 22 74 24 80 32"/>
     <!-- eyes -->
-    <circle cx="52" cy="51" r="2" fill="#16213A" stroke="none"/>
-    <circle cx="69" cy="51" r="2" fill="#16213A" stroke="none"/>
-    <!-- nose -->
-    <path d="M60 52 C59 57 58 60 61 61" fill="none"/>
-    <!-- smile -->
-    <path d="M51 66 C55 71 65 71 69 66" fill="#FFFDF9"/>
-    <path d="M52 66.5 C56 68 64 68 68 66.5" fill="none"/>
+    <circle cx="47" cy="58" r="3.2" fill="#121212" stroke="none"/>
+    <circle cx="73" cy="58" r="3.2" fill="#121212" stroke="none"/>
+    <!-- big smile -->
+    <path d="M44 76 C50 88 70 88 76 76"/>
   </g>
 </svg>
