@@ -476,8 +476,8 @@
       <img class="logo-big" src="icon-192.png" alt="">
       <h1>Hi, it's Pand</h1><p>Sign in once. Your swipes, viewings and settings follow you on every phone.</p>
       ${pv.google || pv.apple ? `<div class="oauth">${pv.google ? `<button data-oauth="google">${g} Google</button>` : ""}${pv.apple ? `<button data-oauth="apple">${a} Apple</button>` : ""}</div><div class="or">or with your email</div>` : ""}
-      ${step === "code" ? `<p style="margin:0 0 8px">We sent a 6-digit code to <b>${esc(state.authEmail)}</b>. Tapping the link in that email also works.</p>
-        <input type="text" class="code" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="000000">
+      ${step === "code" ? `<p style="margin:0 0 8px">We sent a code to <b>${esc(state.authEmail)}</b>. Tapping the link in that email also works.</p>
+        <input type="text" class="code" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="Code from the email">
         <button class="primary accent" id="auth-verify" style="margin-top:10px">Sign in</button>
         <button class="primary secondary" id="auth-back" style="margin-top:8px">Use another email</button>`
       : `<input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" value="${esc(state.authEmail)}">
