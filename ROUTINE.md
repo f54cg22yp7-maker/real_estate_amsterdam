@@ -18,33 +18,13 @@ Runtime notes:
 
 ## Prompt
 
-You are the scheduled ingestion job for the Amsterdam apartment swipe app.
+Scheduled run of the Pand listings job. Work in /home/user/real_estate_amsterdam and follow these steps in order; do not ask questions, use the defaults established in this conversation.
 
-Setup: work in the repository f54cg22yp7-maker/real_estate_amsterdam. If it is not checked out at
-/home/user/real_estate_amsterdam, attach it with add_repo (push access) and clone it there. Then run
-`git pull origin main` inside it. All commands below run from that directory.
-
-1. Gmail: call search_threads with query
-   `subject:(nieuwe woning OR nieuwe woningen) zoekopdracht newer_than:2d` (page size 50).
-   For every thread returned, call get_thread with messageFormat PLAIN_TEXT.
-2. In each email body, every listing starts with a line like `[Street 12 A, 1071 GG Amsterdam] <https://move.nl/exchange-object/<TOKEN>/overzicht?...>`.
-   Collect the TOKEN (the segment between `/exchange-object/` and `/overzicht`) and the email's
-   `Sent:` line. Write `inbox/ingest.json` as a JSON array of objects `{"token": TOKEN, "email_sent": SENT_LINE}`.
-   One entry per listing; duplicates across emails are fine. Never write full email bodies into the repo.
-3. Run `python3 pipeline/job.py ingest inbox/ingest.json`. It dedupes against the database, enriches
-   new listings from their move.nl page, upserts them, and writes `new_listings.json`.
-4. Read `new_listings.json`. For every entry under "new", write ONE English sentence of at most 35
-   words that tells a buyer what matters most. Lead with the biggest risk or the biggest selling
-   point, whichever is stronger: leasehold terms and end date, ground floor or busy road, renovation
-   needed, no outdoor space, non-self-occupancy or age clause in the deed, monument status, weak VvE
-   (no reserve fund or maintenance plan), then the standout positives (light, garden, park, canal).
-   Use description_en and the fields provided. Save `summaries.json` as `{"<id>": "<sentence>"}` and
-   run `python3 pipeline/job.py summaries summaries.json`.
-5. Run `python3 pipeline/job.py refresh --max 30` so older listings pick up status changes.
-6. Run `python3 pipeline/job.py shortlist`. If `docs/shortlist.csv` changed, commit it with the
-   message "Update shortlist" and push to main.
-7. Reply with a short report: new listings (street, price, ownership), status changes, and any
-   failures from new_listings.json. If there were no new emails, say so in one line.
-
-Never commit `inbox/`, `new_listings.json` or `summaries.json` (they are git-ignored).
-If `pipeline/job.py` fails because a host is unreachable, report the host name and stop.
+1. `git pull`.
+2. Gmail: search_threads with query `subject:(nieuwe woning OR nieuwe woningen) zoekopdracht newer_than:2d` (page size 50), get_thread each result in PLAIN_TEXT, and write inbox/ingest.json with one {"token","email_sent"} per listing. Then run `python3 pipeline/job.py ingest inbox/ingest.json`.
+3. For every entry in new_listings.json write a one-sentence buyer summary (ownership and leasehold end, size, floor, bedrooms, outdoor space, energy label, VvE, price per m², one qualitative hook from the description) into summaries.json and run `python3 pipeline/job.py summaries summaries.json`.
+4. `python3 pipeline/job.py refresh --max 30` so statuses stay current.
+5. Viewing requests: run `python3 pipeline/job.py outbox`. For every email in outbox.json, send it with Gmail send_message (to, cc, subject, body exactly as composed), then run `python3 pipeline/job.py outbox-sent <request_id> gmail`. If sending fails, leave the request unsent and report it.
+6. Weekly nudge: run `python3 pipeline/job.py weekly`. If weekly.json is not null, send it with Gmail send_message (to, subject, body) and run `python3 pipeline/job.py weekly-sent <key>`.
+7. `python3 pipeline/job.py shortlist`; if docs/shortlist.csv changed, commit it to main with message "Update shortlist" and push.
+8. Finish with a short report: new listings, status changes, emails sent, failures. If a host is unreachable, name it and stop.

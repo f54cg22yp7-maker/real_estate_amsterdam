@@ -6,7 +6,11 @@
 
 ## 2. Supabase
 
-1. Supabase dashboard > your project > **SQL editor** > paste `supabase/schema.sql` > Run.
+1. Supabase dashboard > your project > **SQL editor** > paste the whole of `supabase/schema.sql` > Run.
+   The file is idempotent: every statement is `create ... if not exists` / `drop policy if exists`, so
+   running it again never deletes data. Re-run it whenever the file changes (v2 added the viewings,
+   evaluations, viewing_requests, viewing_photos and app_events tables, the `listed_since` column and
+   the `viewing-photos` storage bucket).
 2. **Project settings > API**: copy the **Project URL** and the **anon / publishable** key.
    Paste both into `docs/config.js`. The anon key is designed to be public; access is controlled by the
    row-level-security policies in the schema.
@@ -16,3 +20,32 @@
 Repository > **Settings > Pages** > Source: *Deploy from a branch* > Branch `main`, folder `/docs` > Save.
 App URL: `https://f54cg22yp7-maker.github.io/real_estate_amsterdam/`
 On each iPhone: open in Safari > Share > **Add to Home Screen**.
+
+## 4. Google Sheet (personal account)
+
+Sharing from the corporate Drive is blocked, so create the sheet yourself, once, in the Google account
+you want it in (davit.ierusalimski@gmail.com):
+
+1. Open https://sheets.new while signed in to that account, name it "Pand shortlist".
+2. In cell A1 paste:
+   `=IMPORTDATA("https://f54cg22yp7-maker.github.io/real_estate_amsterdam/shortlist.csv")`
+3. Share it with luisgerardo.mtz@gmail.com.
+
+The sheet refreshes itself about hourly from the CSV the job publishes. Columns: rank, match, davit,
+luis, affinity (0-100, closeness to what you both liked), viewing stage and date, each person's
+post-viewing verdict and average score, then the facts, summary and the listing link.
+Ranking: matches first, then affinity descending.
+
+## 5. Weekly viewing request (how it flows)
+
+1. Every Saturday the job emails both of you a nudge and the app opens the **Weekly pick** on first
+   launch that weekend (also reachable any time from the Viewings tab).
+2. Tick the apartments to view (matches are pre-ticked, aim for about 5), optionally type your
+   availability, then either **Send request from Pand** (queued; the job emails Dames van Vermeer from
+   davit.ierusalimski@gmail.com within 3 hours, cc Aranka, Luis and your Outlook) or **Send from my
+   phone** (opens Mail with the same text so it goes from your Outlook address).
+3. Those listings move to **Requested**. When the agent confirms, open the listing, set the date under
+   Viewing and save: it moves to **Scheduled**.
+4. At the viewing open the listing > **Start viewing evaluation**: slide the 1-5 scores per category,
+   tick the checklist, pick a verdict, add notes and photos. Each of you scores separately; the other
+   person's marks show as small dots. Saved live, and the listing moves to **Viewed**.

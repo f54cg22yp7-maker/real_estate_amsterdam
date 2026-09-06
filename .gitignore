@@ -4,3 +4,5 @@ summaries.json
 __pycache__/
 *.pyc
 .DS_Store
+outbox.json
+weekly.json

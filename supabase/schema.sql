@@ -87,3 +87,91 @@ end $$;
 
 -- Added later: date the agent first listed the property (safe to re-run).
 alter table public.listings add column if not exists listed_since date;
+
+-- ---------------------------------------------------------------------------
+-- v2: viewing pipeline, evaluations, weekly email outbox, photos. Safe to re-run.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.viewings (
+  listing_id   text primary key references public.listings(id) on delete cascade,
+  stage        text not null default 'selected'
+               check (stage in ('selected','requested','scheduled','viewed','dropped')),
+  selected_by  text,
+  selected_at  timestamptz not null default now(),
+  request_id   text,                         -- viewing_requests.id once emailed
+  scheduled_at timestamptz,                  -- agreed viewing slot
+  notes        text,
+  updated_at   timestamptz not null default now()
+);
+
+-- Outbox: the app writes a row when the pair confirms the weekly pick; the job emails it.
+create table if not exists public.viewing_requests (
+  id           text primary key,
+  listing_ids  jsonb not null,
+  created_by   text,
+  created_at   timestamptz not null default now(),
+  availability text,                         -- free text typed in the app, optional
+  sent_at      timestamptz,
+  sent_via     text,                         -- gmail / phone
+  error        text
+);
+
+create table if not exists public.evaluations (
+  listing_id  text not null references public.listings(id) on delete cascade,
+  who         text not null check (who in ('davit','luis')),
+  scores      jsonb not null default '{}'::jsonb,   -- category -> 1..5
+  checks      jsonb not null default '{}'::jsonb,   -- checklist item -> true
+  verdict     text check (verdict in ('yes','maybe','no')),
+  notes       text,
+  at          timestamptz not null default now(),
+  primary key (listing_id, who)
+);
+
+create table if not exists public.viewing_photos (
+  id          text primary key,
+  listing_id  text not null references public.listings(id) on delete cascade,
+  who         text,
+  path        text not null,                 -- storage object path in bucket viewing-photos
+  at          timestamptz not null default now()
+);
+
+-- Small key/value log so the job can be idempotent (e.g. weekly nudge sent for ISO week).
+create table if not exists public.app_events (
+  key  text primary key,
+  at   timestamptz not null default now(),
+  data jsonb
+);
+
+alter table public.viewings         enable row level security;
+alter table public.viewing_requests enable row level security;
+alter table public.evaluations      enable row level security;
+alter table public.viewing_photos   enable row level security;
+alter table public.app_events       enable row level security;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['viewings','viewing_requests','evaluations','viewing_photos','app_events'] loop
+    execute format('drop policy if exists %I_read   on public.%I', t, t);
+    execute format('drop policy if exists %I_insert on public.%I', t, t);
+    execute format('drop policy if exists %I_update on public.%I', t, t);
+    execute format('drop policy if exists %I_delete on public.%I', t, t);
+    execute format('create policy %I_read   on public.%I for select to anon, authenticated using (true)', t, t);
+    execute format('create policy %I_insert on public.%I for insert to anon, authenticated with check (true)', t, t);
+    execute format('create policy %I_update on public.%I for update to anon, authenticated using (true) with check (true)', t, t);
+    execute format('create policy %I_delete on public.%I for delete to anon, authenticated using (true)', t, t);
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = t) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
+
+-- Photos taken during viewings: public bucket, anon may upload and read.
+insert into storage.buckets (id, name, public) values ('viewing-photos', 'viewing-photos', true)
+  on conflict (id) do nothing;
+drop policy if exists viewing_photos_upload on storage.objects;
+drop policy if exists viewing_photos_read   on storage.objects;
+create policy viewing_photos_upload on storage.objects for insert to anon, authenticated
+  with check (bucket_id = 'viewing-photos');
+create policy viewing_photos_read   on storage.objects for select to anon, authenticated
+  using (bucket_id = 'viewing-photos');

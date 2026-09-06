@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs><clipPath id="c"><circle cx="60" cy="60" r="58"/></clipPath></defs>
+  <circle cx="60" cy="60" r="58" fill="#D9CDB4"/>
+  <g clip-path="url(#c)" stroke="#16213A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+    <!-- khaki hoodie -->
+    <path d="M6 128 C8 96 28 84 60 84 C92 84 112 96 114 128 Z" fill="#A69B7B"/>
+    <!-- hood edges -->
+    <path d="M30 96 C36 86 44 84 52 86" fill="none"/>
+    <path d="M90 96 C84 86 76 84 68 86" fill="none"/>
+    <!-- white tee -->
+    <path d="M48 86 C52 96 68 96 72 86 L72 92 C68 100 52 100 48 92 Z" fill="#F6F1E7"/>
+    <!-- neck -->
+    <path d="M50 70 L50 88 L70 88 L70 70 Z" fill="#CFA07A"/>
+    <!-- head -->
+    <path d="M38 47 C38 30 48 23 60 23 C72 23 82 30 82 47 C82 63 74 78 60 78 C46 78 38 63 38 47 Z" fill="#D9A986"/>
+    <!-- short hair -->
+    <path d="M37 46 C36 30 46 19 60 19 C74 19 84 30 83 46 C81 38 74 32 60 32 C46 32 39 38 37 46 Z" fill="#2A221E"/>
+    <!-- brows: strong -->
+    <path d="M45 45 C50 42 55 42 58 44" fill="none" stroke-width="2.6"/>
+    <path d="M62 44 C65 42 70 42 75 45" fill="none" stroke-width="2.6"/>
+    <!-- eyes -->
+    <circle cx="52" cy="51" r="2" fill="#16213A" stroke="none"/>
+    <circle cx="69" cy="51" r="2" fill="#16213A" stroke="none"/>
+    <!-- nose -->
+    <path d="M60 52 C59 57 58 60 61 61" fill="none"/>
+    <!-- mustache -->
+    <path d="M52 64 C55 61 58 62 60 63 C62 62 65 61 68 64 C65 66 55 66 52 64 Z" fill="#2A221E"/>
+    <!-- mouth -->
+    <path d="M54 68 C57 70 63 70 66 68" fill="none"/>
+    <!-- goatee -->
+    <path d="M55 73 C57 77 63 77 65 73 C63 75 57 75 55 73 Z" fill="#2A221E"/>
+  </g>
+</svg>

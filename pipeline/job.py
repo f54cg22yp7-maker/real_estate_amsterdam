@@ -27,6 +27,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from pipeline.parse_email import parse as parse_email, object_id  # noqa: E402
 from pipeline.enrich import enrich  # noqa: E402
+from pipeline.affinity import profile as aff_profile, score as aff_score  # noqa: E402
+from datetime import timedelta, date  # noqa: E402
 from pipeline.summary import summary as fallback_summary, outdoor  # noqa: E402
 
 cfg = open(os.path.join(ROOT, "docs", "config.js"), encoding="utf-8").read()
@@ -40,8 +42,11 @@ COLS = ["id", "url", "status", "address", "street", "postcode", "lat", "lng", "p
         "enriched_at", "updated_at", "listed_since"]
 
 
-def sb_get(table, params):
+def sb_get(table, params, optional=False):
     r = requests.get(f"{SB_URL}/rest/v1/{table}", headers=H, params=params, timeout=60)
+    if optional and r.status_code == 404:
+        print(f"  note: table {table} missing, run supabase/schema.sql (treating as empty)")
+        return []
     r.raise_for_status()
     return r.json()
 
@@ -166,13 +171,51 @@ def cmd_refresh(max_n=40):
     print(f"refreshed {len(out)}, status changes {changed}")
 
 
+AGENT = {
+    "to": ["info@damesvanvermeer.nl"],
+    "cc": ["aranka@damesvanvermeer.nl", "luisgerardo.mtz@gmail.com", "davit.muradyan@outlook.com"],
+    "greeting": "Hi Eline, Aranka,",
+}
+NUDGE_TO = ["davit.ierusalimski@gmail.com", "luisgerardo.mtz@gmail.com"]
+APP_URL = "https://f54cg22yp7-maker.github.io/real_estate_amsterdam/"
+
+
+def sb_patch(table, params, data):
+    r = requests.patch(f"{SB_URL}/rest/v1/{table}", headers=dict(H, Prefer="return=minimal"), params=params,
+                       data=json.dumps(data), timeout=60)
+    r.raise_for_status()
+
+
+def lease_until(l):
+    lease = l.get("leasehold") or {}
+    return next((str(v)[:10] for k, v in lease.items() if "afgekocht" in k.lower()), "")
+
+
+def ownership_line(l):
+    o = (l.get("ownership") or "").lower()
+    if o.startswith("freehold"):
+        return "Eigen grond (freehold, no ground lease)"
+    if o.startswith("leasehold"):
+        u = lease_until(l)
+        if "eeuwig" in u.lower():
+            return "Erfpacht (leasehold), bought off in perpetuity"
+        return f"Erfpacht (leasehold), paid until {u[:4]}" if u else "Erfpacht (leasehold), terms to confirm"
+    return "Ownership to confirm"
+
+
 def cmd_shortlist():
     ls = {l["id"]: l for l in sb_get("listings", {"select": "*"})}
     vs = sb_get("votes", {"select": "*"})
+    vw = {v["listing_id"]: v for v in sb_get("viewings", {"select": "*"}, optional=True)}
+    ev = {}
+    for e in sb_get("evaluations", {"select": "listing_id,who,verdict,scores"}, optional=True):
+        ev.setdefault(e["listing_id"], {})[e["who"]] = e
     by = {}
     for v in vs:
         by.setdefault(v["listing_id"], {})[v["who"]] = v
-    people = sorted({v["who"] for v in vs} | {"davit", "luis"})
+    people = ["davit", "luis"]
+    liked = [ls[i] for i, votes in by.items() if i in ls and any(v["vote"] == "yes" for v in votes.values())]
+    prof = aff_profile(liked)
     out = []
     for lid, votes in by.items():
         l = ls.get(lid)
@@ -181,27 +224,113 @@ def cmd_shortlist():
         likes = [w for w, v in votes.items() if v["vote"] == "yes"]
         if not likes:
             continue
-        lease = l.get("leasehold") or {}
-        until = next((v for k, v in lease.items() if "afgekocht" in k.lower()), "")
+        match = len(likes) == len(people)
+        aff = aff_score(l, prof) or 0
+        evs = ev.get(lid, {})
+        def avg(e):
+            sc = [v for v in (e.get("scores") or {}).values() if isinstance(v, (int, float))]
+            return round(sum(sc) / len(sc), 1) if sc else ""
         out.append({
-            "match": "YES" if len(likes) == len(people) else "",
-            "liked_by": ", ".join(sorted(likes)),
-            **{f"{p}_vote": (votes.get(p) or {}).get("vote", "") for p in people},
+            "rank": 0,
+            "match": "YES" if match else "",
+            "davit": (votes.get("davit") or {}).get("vote", ""),
+            "luis": (votes.get("luis") or {}).get("vote", ""),
+            "affinity": aff,
+            "viewing": (vw.get(lid) or {}).get("stage", ""),
+            "viewing_date": ((vw.get(lid) or {}).get("scheduled_at") or "")[:16].replace("T", " "),
+            "davit_verdict": (evs.get("davit") or {}).get("verdict", ""), "davit_score": avg(evs.get("davit", {})),
+            "luis_verdict": (evs.get("luis") or {}).get("verdict", ""), "luis_score": avg(evs.get("luis", {})),
             "address": l.get("address"), "area": l.get("postcode"), "price": l.get("price"), "m2": l.get("m2"),
             "price_per_m2": l.get("price_per_m2"), "rooms": l.get("rooms"), "bedrooms": l.get("bedrooms"),
             "floor": l.get("floor"), "build_year": l.get("build_year"), "energy_label": l.get("energy_label"),
-            "ownership": l.get("ownership"), "leasehold_until": until, "vve_monthly": l.get("vve_monthly"),
-            "outdoor": l.get("outdoor"), "status": l.get("status"), "listed_since": l.get("listed_since"),
-            "summary": l.get("summary"), "url": l.get("url"),
-            "last_vote": max(v["at"] for v in votes.values()),
+            "ownership": l.get("ownership"), "leasehold_until": lease_until(l), "vve_monthly": l.get("vve_monthly"),
+            "outdoor": l.get("outdoor"), "status": l.get("status"), "summary": l.get("summary"), "url": l.get("url"),
+            "last_vote": max(v["at"] for v in votes.values())[:16].replace("T", " "),
         })
-    out.sort(key=lambda r: (r["match"] != "YES", r["last_vote"]), reverse=False)
-    out.sort(key=lambda r: r["match"] != "YES")
+    out.sort(key=lambda r: (r["match"] != "YES", -r["affinity"], r["last_vote"]))
+    for i, r in enumerate(out, 1):
+        r["rank"] = i
     path = os.path.join(ROOT, "docs", "shortlist.csv")
+    cols = ["rank", "match", "davit", "luis", "affinity", "viewing", "viewing_date", "davit_verdict", "davit_score",
+            "luis_verdict", "luis_score", "address", "area", "price", "m2", "price_per_m2", "rooms", "bedrooms", "floor",
+            "build_year", "energy_label", "ownership", "leasehold_until", "vve_monthly", "outdoor", "status", "summary",
+            "url", "last_vote"]
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(out[0].keys()) if out else ["match", "address"])
+        w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader(); w.writerows(out)
     print(f"shortlist rows: {len(out)} -> docs/shortlist.csv")
+
+
+def next_week_slots(today=None):
+    """Wednesday afternoon, Friday morning, Friday afternoon of the following week, as text."""
+    today = today or date.today()
+    monday = today + timedelta(days=(7 - today.weekday()))  # next Monday
+    wed, fri = monday + timedelta(days=2), monday + timedelta(days=4)
+    f = lambda d: d.strftime("%A %-d %B")
+    return f"{f(wed)} in the afternoon, or {f(fri)} in the morning or afternoon"
+
+
+def cmd_outbox():
+    """Compose the viewing-request emails for unsent viewing_requests -> outbox.json (the session sends them)."""
+    reqs = sb_get("viewing_requests", {"select": "*", "sent_at": "is.null", "order": "created_at.asc"}, optional=True)
+    if not reqs:
+        print("outbox: nothing to send"); json.dump([], open(os.path.join(ROOT, "outbox.json"), "w")); return
+    ls = {l["id"]: l for l in sb_get("listings", {"select": "*"})}
+    mails = []
+    for r in reqs:
+        ids = [i for i in r["listing_ids"] if i in ls]
+        if not ids:
+            sb_patch("viewing_requests", {"id": f"eq.{r['id']}"}, {"error": "no listings"}); continue
+        week = datetime.now(timezone.utc).isocalendar()[1]
+        lines = []
+        for i in ids:
+            l = ls[i]
+            lines.append(f"{l['address']}\n{l['url']}\n€ {l['price']:,}".replace(",", ".") + f",- k.k. · {l.get('m2')} m² · {ownership_line(l)}")
+        avail = (r.get("availability") or "").strip()
+        avail_line = avail if avail else f"For viewings we are available {next_week_slots()}. If none of those work we can usually be flexible, just let us know what is possible."
+        body = (f"{AGENT['greeting']}\n\nHope all is well! We went through this week's listings and would like to view the following "
+                f"{'one' if len(ids) == 1 else str(len(ids))}:\n\n" + "\n\n".join(lines) +
+                f"\n\n{avail_line}\n\nThanks in advance!\n\nBest,\nDavit & Luis")
+        mails.append({"request_id": r["id"], "to": AGENT["to"], "cc": AGENT["cc"], "subject": f"Week {week} listings: viewing request",
+                      "body": body, "listing_ids": ids})
+    json.dump(mails, open(os.path.join(ROOT, "outbox.json"), "w"), ensure_ascii=False, indent=1)
+    print(f"outbox: {len(mails)} email(s) composed -> outbox.json")
+
+
+def cmd_outbox_sent(request_id, via="gmail"):
+    now = datetime.now(timezone.utc).isoformat()
+    sb_patch("viewing_requests", {"id": f"eq.{request_id}"}, {"sent_at": now, "sent_via": via, "error": None})
+    r = sb_get("viewing_requests", {"select": "listing_ids", "id": f"eq.{request_id}"})
+    ids = r[0]["listing_ids"] if r else []
+    if ids:
+        sb_patch("viewings", {"listing_id": f"in.({','.join(ids)})", "stage": "eq.requested"}, {"updated_at": now})
+    print(f"marked {request_id} sent via {via} ({len(ids)} listings)")
+
+
+def cmd_weekly():
+    """Saturday nudge: list this week's likes; write weekly.json for the session to email, unless already sent this ISO week."""
+    now = datetime.now(timezone.utc)
+    key = f"nudge-{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
+    if now.weekday() != 5:
+        print("weekly: not Saturday, skip"); json.dump(None, open(os.path.join(ROOT, "weekly.json"), "w")); return
+    if sb_get("app_events", {"select": "key", "key": f"eq.{key}"}, optional=True):
+        print("weekly: nudge already sent this week"); json.dump(None, open(os.path.join(ROOT, "weekly.json"), "w")); return
+    since = (now - timedelta(days=7)).isoformat()
+    vs = sb_get("votes", {"select": "listing_id,who,vote,at", "vote": "eq.yes", "at": f"gte.{since}"})
+    ids = sorted({v["listing_id"] for v in vs})
+    ls = {l["id"]: l for l in sb_get("listings", {"select": "id,address,price,m2,url,status", "id": f"in.({','.join(ids)})"})} if ids else {}
+    allv = sb_get("votes", {"select": "listing_id,who,vote", "listing_id": f"in.({','.join(ids)})"}) if ids else []
+    both = {i for i in ids if sum(1 for v in allv if v["listing_id"] == i and v["vote"] == "yes") == 2}
+    lines = [f"- {ls[i]['address']} · € {ls[i]['price']:,}".replace(",", ".") + f" · {ls[i].get('m2')} m²" + (" · MATCH" if i in both else "") for i in ids if i in ls]
+    mail = {"key": key, "to": NUDGE_TO, "subject": f"Pand weekly pick: {len(ids)} liked this week" if ids else "Pand weekly pick: nothing new this week",
+            "body": ("Hi both,\n\n" + (f"{len(ids)} listing(s) got a like this week ({len(both)} match). Open Pand, tap Viewings and choose which ones to request:\n\n" + "\n".join(lines) if ids else "No new likes this week. Keep swiping, new listings arrive every few hours.") + f"\n\n{APP_URL}\n")}
+    json.dump(mail, open(os.path.join(ROOT, "weekly.json"), "w"), ensure_ascii=False, indent=1)
+    print(f"weekly: nudge composed ({len(ids)} likes, {len(both)} matches) -> weekly.json")
+
+
+def cmd_weekly_sent(key):
+    sb_upsert("app_events", [{"key": key, "at": datetime.now(timezone.utc).isoformat()}], on_conflict="key")
+    print("weekly: logged", key)
 
 
 def cmd_stats():
@@ -218,5 +347,9 @@ if __name__ == "__main__":
     elif a[0] == "summaries": cmd_summaries(a[1])
     elif a[0] == "refresh": cmd_refresh(int(a[a.index("--max") + 1]) if "--max" in a else 40)
     elif a[0] == "shortlist": cmd_shortlist()
+    elif a[0] == "outbox": cmd_outbox()
+    elif a[0] == "outbox-sent": cmd_outbox_sent(a[1], a[2] if len(a) > 2 else "gmail")
+    elif a[0] == "weekly": cmd_weekly()
+    elif a[0] == "weekly-sent": cmd_weekly_sent(a[1])
     elif a[0] == "stats": cmd_stats()
     else: print(__doc__); sys.exit(1)
