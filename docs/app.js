@@ -25,7 +25,7 @@
   const ATTR = "&copy; OpenStreetMap &copy; CARTO";
   const gmaps = (l) => `https://www.google.com/maps/search/?api=1&query=${l.lat},${l.lng}`;
   const amaps = (l) => `https://maps.apple.com/?q=${encodeURIComponent(l.address || "")}&ll=${l.lat},${l.lng}`;
-  const photosOf = (l, n) => ((l.photos && l.photos.length ? l.photos : [l.photo]).filter(Boolean)).slice(0, n || 99);
+  const photosOf = (l, n) => { const a = (l.photos && l.photos.length ? l.photos : [l.photo]).filter(Boolean); return n ? a.slice(0, n) : a; };
 
   function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => (t.hidden = true), 2200); }
   function voteOf(id, who) { return state.votes.find((v) => v.listing_id === id && v.who === who); }
@@ -515,10 +515,10 @@
   function allAreas() { const seen = [...new Set(Object.values(window.AREAS || {}))]; const groups = {}; seen.forEach((a) => { const d = a.split(/ \(|\//)[0].trim(); (groups[d] = groups[d] || []).push(a); }); return groups; }
   function openPrefs() { renderPrefs(); $("#prefs").hidden = false; }
   function renderPrefs() {
-    const q = state.prefs || {}; const opt = (key, vals) => `<div class="opts">${vals.map(([v, lab]) => `<button data-pref-key="${key}" data-pref-val="${v}" class="${String(q[key] == null ? "any" : q[key]) === v ? "on" : ""}">${lab}</button>`).join("")}</div>`;
+    const q = state.prefs || {}; const opt = (key, vals) => `<div class="opts">${vals.map(([v, lab]) => `<button data-pref-key="${key}" data-pref-val="${v}" class="${String(q[key] == null ? (key === "max_km" ? "5" : "any") : q[key]) === v ? "on" : ""}">${lab}</button>`).join("")}</div>`;
     const groups = allAreas(); const pr = q.priorities || [];
     $("#prefs-body").innerHTML = `
-      <p style="margin:6px 2px 12px;color:var(--muted);font-size:13.5px">Ten quick questions. Answers are shared between you two and drive the "% fit" on every card, together with what you actually like. Change them any time.</p>
+      <p style="margin:6px 2px 12px;color:var(--muted);font-size:13.5px">Fourteen quick questions. Answers are shared between you two and drive the "% fit" on every card, together with what you actually like. Change them any time.</p>
       <div class="stack">
         <div class="q"><h4>1. Budget <span class="val" id="v-budget">${q.budget ? eur(q.budget) : "no limit"}</span></h4><p>Maximum asking price you would consider.</p><input type="range" id="r-budget" min="400000" max="1500000" step="25000" value="${q.budget || 1500000}"></div>
         <div class="q"><h4>2. Minimum size <span class="val" id="v-m2">${q.min_m2 ? q.min_m2 + " m²" : "any"}</span></h4><p>Living area below which it is a no.</p><input type="range" id="r-m2" min="40" max="150" step="5" value="${q.min_m2 || 40}"></div>
@@ -531,6 +531,11 @@
         <div class="q"><h4>8. Floor</h4>${opt("floor", [["ground", "Ground floor with garden"], ["upper", "Upper floor"], ["top", "Top floor"], ["any", "Don't care"]])}</div>
         <div class="q"><h4>9. Building era</h4>${opt("era", [["prewar", "Pre-war character"], ["modern", "Modern (1990+)"], ["any", "Don't care"]])}</div>
         <div class="q"><h4>10. Max VvE per month</h4>${opt("max_vve", [["any", "Any"], ["150", "€150"], ["250", "€250"], ["400", "€400"]])}</div>
+        <div class="q"><h4>11. Max price per m²</h4><p>A quick value check against the asking price.</p>${opt("max_ppm", [["any", "Any"], ["7000", "€7.000"], ["8000", "€8.000"], ["9000", "€9.000"], ["10000", "€10.000"]])}</div>
+        <div class="q"><h4>12. Place you go most</h4><p>Work, gym, friends. Listings within the distance below score full.</p>${opt("anchor", [["any", "None"], ["zuidas", "Zuidas"], ["centraal", "Centraal"], ["amstel", "Amstel station"], ["sloterdijk", "Sloterdijk"], ["sciencepark", "Science Park"], ["leidseplein", "Leidseplein"], ["museumplein", "Museumplein"], ["vondelpark", "Vondelpark"], ["westerpark", "Westerpark"], ["oosterpark", "Oosterpark"]])}
+          <p style="margin-top:10px">Max distance as the crow flies</p>${opt("max_km", [["2", "2 km"], ["3", "3 km"], ["5", "5 km"], ["8", "8 km"]])}</div>
+        <div class="q"><h4>13. Elevator</h4>${opt("lift", [["need", "Needed"], ["nice", "Nice to have"], ["any", "Don't care"]])}</div>
+        <div class="q"><h4>14. Parking</h4>${opt("parking", [["need", "Needed"], ["nice", "Nice to have"], ["any", "Don't care"]])}</div>
         <div class="q"><h4>Top 3 priorities</h4><p>Tap in order of importance. These get extra weight.</p>
           <div class="opts">${PRIOS.map(([k, lab]) => { const i = pr.indexOf(k); return `<button data-prio="${k}" class="${i >= 0 ? "on" : ""}">${i >= 0 ? `<b>${i + 1}</b>` : ""}${lab}</button>`; }).join("")}</div></div>
         <button class="primary danger" id="prefs-reset">Clear all answers</button>
@@ -562,8 +567,9 @@
       <div class="card-block" style="margin-top:10px"><h4>Appearance</h4>
         <div class="setting"><div class="l">Theme</div><div class="segsm">${["system", "light", "dark"].map((t) => `<button data-theme="${t}" class="${state.theme === t ? "active" : ""}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</div></div>
       </div>
-      <div class="card-block" style="margin-top:10px"><h4>Fit</h4>
-        <div class="setting"><div class="l">What fits you<small>${window.Affinity.hasPrefs(state.prefs) ? "Answered · drives the % fit with your likes" : "10 questions to tune the % fit"}</small></div><button class="pill ink" data-prefs="1" style="border:0;padding:8px 14px">${window.Affinity.hasPrefs(state.prefs) ? "Edit" : "Start"}</button></div>
+      <div class="card-block" style="margin-top:10px"><h4>Preferences</h4>
+        <div class="setting"><div class="l">What fits you<small>${window.Affinity.hasPrefs(state.prefs) ? "Answered · shapes the % fit together with your likes" : "14 questions about budget, size, areas, ownership and more"}</small></div></div>
+        <button class="primary accent" data-prefs="1" style="margin-top:6px">${window.Affinity.hasPrefs(state.prefs) ? "Edit preferences" : "Set preferences"}</button>
       </div>
       <div class="card-block" style="margin-top:10px"><h4>Viewings</h4>
         <div class="setting"><div class="l">Weekly target<small>How many viewings to request per week</small></div><div class="segsm">${[3, 5, 8].map((n) => `<button data-target="${n}" class="${state.weeklyTarget === n ? "active" : ""}">${n}</button>`).join("")}</div></div>

@@ -183,7 +183,7 @@ def parse_html(html: str, url: str | None = None) -> dict:
         "maintenance_outside": find(nl, "Onderhoud buiten"),
         "listed_since": listed_iso or listed,
         "photo": main_photo,
-        "photos": photos[:12],
+        "photos": photos,
         "description_en": (deref(obj.get("aanbiedingsTekstEnglish")) or "").strip() or None,
         "description_nl": (deref(obj.get("aanbiedingsTekst")) or "").strip() or None,
         "features_en": en,

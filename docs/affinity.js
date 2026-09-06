@@ -10,6 +10,13 @@ window.Affinity = (function () {
   const isTop = (l) => /penthouse|top|bovenste/i.test(`${l.type || ""} ${l.floor || ""}`);
   const district = (name) => (name || "").split(/ \(|\//)[0].trim();
   const areaOf = (l) => (window.areaFor && window.areaFor(l.postcode)) || "";
+  const featText = (l) => Object.entries(l.features || {}).map(([k, v]) => k + " " + v).join(" ").toLowerCase();
+  const hasLift = (l) => /\blift\b|elevator/.test(featText(l)) && !/geen lift|no lift/.test(featText(l));
+  const hasParking = (l) => /parkeer|parking|garage/.test(featText(l)) && !/geen parkeer|no parking/.test(featText(l));
+  const ANCHORS = { centraal: [52.3791, 4.9003], zuidas: [52.3380, 4.8730], amstel: [52.3467, 4.9175], sloterdijk: [52.3887, 4.8380], sciencepark: [52.3546, 4.9530],
+    leidseplein: [52.3641, 4.8829], museumplein: [52.3580, 4.8810], westerpark: [52.3865, 4.8760], oosterpark: [52.3600, 4.9200], vondelpark: [52.3579, 4.8686] };
+  const kmTo = (l, key) => { const a = ANCHORS[key]; if (!a || !l.lat || !l.lng) return null; const R = 6371, dLat = (l.lat - a[0]) * Math.PI / 180, dLng = (l.lng - a[1]) * Math.PI / 180;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * Math.PI / 180) * Math.cos(l.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
 
   function profile(liked) {
     liked = liked.filter(Boolean); if (!liked.length) return null;
@@ -32,7 +39,7 @@ window.Affinity = (function () {
     if (p.beds != null && l.bedrooms != null) s += 5 * (l.bedrooms >= p.beds ? 1 : 0.5);
     return Math.min(100, s);
   }
-  const BASE = { location: 25, price: 15, size: 15, outdoor: 15, ownership: 10, energy: 8, bedrooms: 6, floor: 3, era: 3 };
+  const BASE = { location: 25, price: 15, size: 15, outdoor: 15, ownership: 10, energy: 8, bedrooms: 6, floor: 3, era: 3, ppm: 6, anchor: 8, lift: 4, parking: 4 };
   function explicit(l, q) {
     if (!q) return null;
     const c = {};
@@ -48,6 +55,11 @@ window.Affinity = (function () {
     c.floor = q.floor === "ground" ? (isGround(l) ? 1 : 0.4) : q.floor === "upper" ? (isGround(l) ? 0.4 : 1) : q.floor === "top" ? (isTop(l) ? 1 : 0.6) : 0.8;
     const y = +l.build_year || 0;
     c.era = q.era === "prewar" ? (y && y < 1945 ? 1 : 0.5) : q.era === "modern" ? (y >= 1990 ? 1 : 0.5) : 0.8;
+    c.ppm = !q.max_ppm || !l.price_per_m2 ? 0.7 : l.price_per_m2 <= q.max_ppm ? 1 : Math.max(0, 1 - (l.price_per_m2 / q.max_ppm - 1) / 0.2);
+    const d = q.anchor ? kmTo(l, q.anchor) : null; const mk = q.max_km || 5;
+    c.anchor = d == null ? 0.7 : d <= mk ? 1 : Math.max(0, 1 - (d - mk) / mk);
+    c.lift = q.lift === "need" ? (hasLift(l) ? 1 : 0.1) : q.lift === "nice" ? (hasLift(l) ? 1 : 0.6) : 0.8;
+    c.parking = q.parking === "need" ? (hasParking(l) ? 1 : 0.1) : q.parking === "nice" ? (hasParking(l) ? 1 : 0.6) : 0.8;
     const w = { ...BASE }; const boost = [1.6, 1.35, 1.15];
     (q.priorities || []).slice(0, 3).forEach((k, i) => { if (w[k] != null) w[k] *= boost[i]; });
     const tot = Object.values(w).reduce((a, b) => a + b, 0);
@@ -63,5 +75,5 @@ window.Affinity = (function () {
     if (g == null || !p || p.n < 5) return Math.round(e);
     return Math.round(0.6 * e + 0.4 * g);
   }
-  return { profile, score, explicit, learned, hasOutdoor, ownGood, hasPrefs };
+  return { profile, score, explicit, learned, hasOutdoor, ownGood, hasPrefs, ANCHORS, kmTo };
 })();

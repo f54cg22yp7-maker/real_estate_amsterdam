@@ -43,6 +43,35 @@ def _district(name):
     return re.split(r" \(|/", name or "")[0].strip()
 
 
+def _feat_text(l):
+    return " ".join(f"{k} {v}" for k, v in (l.get("features") or {}).items()).lower()
+
+
+def _has_lift(l):
+    t = _feat_text(l)
+    return bool(re.search(r"\blift\b|elevator", t)) and not re.search(r"geen lift|no lift", t)
+
+
+def _has_parking(l):
+    t = _feat_text(l)
+    return bool(re.search(r"parkeer|parking|garage", t)) and not re.search(r"geen parkeer|no parking", t)
+
+
+ANCHORS = {"centraal": (52.3791, 4.9003), "zuidas": (52.3380, 4.8730), "amstel": (52.3467, 4.9175), "sloterdijk": (52.3887, 4.8380),
+           "sciencepark": (52.3546, 4.9530), "leidseplein": (52.3641, 4.8829), "museumplein": (52.3580, 4.8810), "westerpark": (52.3865, 4.8760),
+           "oosterpark": (52.3600, 4.9200), "vondelpark": (52.3579, 4.8686)}
+
+
+def km_to(l, key):
+    import math
+    a = ANCHORS.get(key)
+    if not a or not l.get("lat") or not l.get("lng"):
+        return None
+    d_lat, d_lng = math.radians(l["lat"] - a[0]), math.radians(l["lng"] - a[1])
+    h = math.sin(d_lat / 2) ** 2 + math.cos(math.radians(a[0])) * math.cos(math.radians(l["lat"])) * math.sin(d_lng / 2) ** 2
+    return 2 * 6371 * math.asin(math.sqrt(h))
+
+
 _AREAS = None
 
 
@@ -98,7 +127,8 @@ def learned(l, p):
     return min(100.0, s)
 
 
-BASE = {"location": 25, "price": 15, "size": 15, "outdoor": 15, "ownership": 10, "energy": 8, "bedrooms": 6, "floor": 3, "era": 3}
+BASE = {"location": 25, "price": 15, "size": 15, "outdoor": 15, "ownership": 10, "energy": 8, "bedrooms": 6, "floor": 3, "era": 3,
+        "ppm": 6, "anchor": 8, "lift": 4, "parking": 4}
 
 
 def explicit(l, q):
@@ -127,6 +157,15 @@ def explicit(l, q):
         y = 0
     era = q.get("era")
     c["era"] = (1.0 if y and y < 1945 else 0.5) if era == "prewar" else (1.0 if y >= 1990 else 0.5) if era == "modern" else 0.8
+    mp, ppm = q.get("max_ppm"), l.get("price_per_m2")
+    c["ppm"] = 0.7 if not mp or not ppm else 1.0 if ppm <= mp else max(0.0, 1 - (ppm / mp - 1) / 0.2)
+    d = km_to(l, q["anchor"]) if q.get("anchor") else None
+    mk = q.get("max_km") or 5
+    c["anchor"] = 0.7 if d is None else 1.0 if d <= mk else max(0.0, 1 - (d - mk) / mk)
+    lf = q.get("lift")
+    c["lift"] = (1.0 if _has_lift(l) else 0.1) if lf == "need" else (1.0 if _has_lift(l) else 0.6) if lf == "nice" else 0.8
+    pk = q.get("parking")
+    c["parking"] = (1.0 if _has_parking(l) else 0.1) if pk == "need" else (1.0 if _has_parking(l) else 0.6) if pk == "nice" else 0.8
     w = dict(BASE)
     for i, k in enumerate((q.get("priorities") or [])[:3]):
         if k in w:
