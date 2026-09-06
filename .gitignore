@@ -1,0 +1,6 @@
+inbox/
+new_listings.json
+summaries.json
+__pycache__/
+*.pyc
+.DS_Store

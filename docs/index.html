@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Amsterdam Swipe</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Amsterdam">
+<meta name="theme-color" content="#111318">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">Amsterdam <span class="count" id="count"></span></div>
+  <div class="who" id="who"></div>
+</header>
+
+<main id="main">
+  <section id="view-swipe" class="view active">
+    <div class="deck" id="deck"></div>
+    <div class="actions" id="actions">
+      <button class="btn undo" id="btn-undo" title="Undo" aria-label="Undo">&#8630;</button>
+      <button class="btn no" id="btn-no" aria-label="Pass">&#10005;</button>
+      <button class="btn yes" id="btn-yes" aria-label="Like">&#9829;</button>
+    </div>
+  </section>
+  <section id="view-likes" class="view"><div class="list" id="likes"></div></section>
+  <section id="view-matches" class="view"><div class="list" id="matches"></div></section>
+  <section id="view-map" class="view"><div id="bigmap"></div><div class="legend">
+    <span><i class="dot match"></i>Match</span><span><i class="dot mine"></i>Your like</span><span><i class="dot theirs"></i>Their like</span><span><i class="dot open"></i>Not yet swiped</span></div></section>
+</main>
+
+<nav class="tabs">
+  <button data-view="swipe" class="active">Swipe</button>
+  <button data-view="likes">Likes <b id="n-likes"></b></button>
+  <button data-view="matches">Matches <b id="n-matches"></b></button>
+  <button data-view="map">Map</button>
+</nav>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="vendor/supabase.js"></script>
+<script src="vendor/leaflet.js"></script>
+<script src="config.js"></script>
+<script src="areas.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

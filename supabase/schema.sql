@@ -54,7 +54,7 @@ create or replace view public.matches as
   group by l.id
   having count(distinct v.who) = 2;
 
--- Row level security: open read/insert/update for anon, no delete.
+-- Row level security: open read/insert/update for anon; delete only on votes (Undo). Safe to re-run.
 alter table public.listings enable row level security;
 alter table public.votes    enable row level security;
 
@@ -64,6 +64,7 @@ drop policy if exists listings_update on public.listings;
 drop policy if exists votes_read      on public.votes;
 drop policy if exists votes_insert    on public.votes;
 drop policy if exists votes_update    on public.votes;
+drop policy if exists votes_delete    on public.votes;
 
 create policy listings_read   on public.listings for select to anon, authenticated using (true);
 create policy listings_insert on public.listings for insert to anon, authenticated with check (true);
@@ -71,6 +72,7 @@ create policy listings_update on public.listings for update to anon, authenticat
 create policy votes_read      on public.votes    for select to anon, authenticated using (true);
 create policy votes_insert    on public.votes    for insert to anon, authenticated with check (true);
 create policy votes_update    on public.votes    for update to anon, authenticated using (true) with check (true);
+create policy votes_delete    on public.votes    for delete to anon, authenticated using (true);  -- needed for Undo
 
 -- Realtime so both phones see each other's swipes live.
 do $$
