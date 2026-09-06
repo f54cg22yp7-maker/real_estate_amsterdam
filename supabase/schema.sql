@@ -35,6 +35,9 @@ create table if not exists public.listings (
   updated_at    timestamptz not null default now()
 );
 
+-- Added later: date the agent first listed the property (safe to re-run).
+alter table public.listings add column if not exists listed_since date;
+
 create table if not exists public.votes (
   listing_id  text not null references public.listings(id) on delete cascade,
   who         text not null check (who in ('davit','luis')),
@@ -46,8 +49,10 @@ create table if not exists public.votes (
 create index if not exists votes_who_idx on public.votes(who);
 create index if not exists listings_first_seen_idx on public.listings(first_seen desc);
 
--- Matches: listings both people liked.
-create or replace view public.matches as
+-- Matches: listings both people liked. Dropped first: a view cannot be replaced once the
+-- column list of listings changes (e.g. listed_since was added later).
+drop view if exists public.matches;
+create view public.matches as
   select l.*, max(v.at) as matched_at
   from public.listings l
   join public.votes v on v.listing_id = l.id and v.vote = 'yes'
@@ -84,9 +89,6 @@ begin
     alter publication supabase_realtime add table public.listings;
   end if;
 end $$;
-
--- Added later: date the agent first listed the property (safe to re-run).
-alter table public.listings add column if not exists listed_since date;
 
 -- ---------------------------------------------------------------------------
 -- v2: viewing pipeline, evaluations, weekly email outbox, photos. Safe to re-run.
