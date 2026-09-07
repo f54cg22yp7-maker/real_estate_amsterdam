@@ -513,12 +513,16 @@
   /* ---------- Preferences questionnaire (shared by both) ---------- */
   const PRIOS = [["location", "Neighbourhood"], ["outdoor", "Outdoor space"], ["size", "Size"], ["price", "Price"], ["energy", "Energy label"], ["ownership", "Freehold / paid-off lease"]];
   function allAreas() { const seen = [...new Set(Object.values(window.AREAS || {}))]; const groups = {}; seen.forEach((a) => { const d = a.split(/ \(|\//)[0].trim(); (groups[d] = groups[d] || []).push(a); }); return groups; }
-  function openPrefs() { renderPrefs(); $("#prefs").hidden = false; }
+  async function openPrefs() {
+    const cur = await sb.from("app_events").select("data").eq("key", "couple_prefs").maybeSingle();   // always start from the latest shared answers
+    if (cur.data && cur.data.data) state.prefs = cur.data.data;
+    renderPrefs(); $("#prefs").hidden = false;
+  }
   function renderPrefs() {
     const q = state.prefs || {}; const opt = (key, vals) => `<div class="opts">${vals.map(([v, lab]) => `<button data-pref-key="${key}" data-pref-val="${v}" class="${String(q[key] == null ? (key === "max_km" ? "5" : "any") : q[key]) === v ? "on" : ""}">${lab}</button>`).join("")}</div>`;
     const groups = allAreas(); const pr = q.priorities || [];
     $("#prefs-body").innerHTML = `
-      <p style="margin:6px 2px 12px;color:var(--muted);font-size:13.5px">Fourteen quick questions. Answers are shared between you two and drive the "% fit" on every card, together with what you actually like. Change them any time.</p>
+      <p style="margin:6px 2px 12px;color:var(--muted);font-size:13.5px">Fourteen quick questions. One shared answer set for both of you: whoever changes something changes it for both, and every card re-scores on both phones within seconds.${q.updated_by ? ` Last changed by ${esc(nameOf(q.updated_by))}${q.updated_at ? " · " + esc(fmtDate(q.updated_at)) : ""}.` : ""}</p>
       <div class="stack">
         <div class="q"><h4>1. Budget <span class="val" id="v-budget">${q.budget ? eur(q.budget) : "no limit"}</span></h4><p>Maximum asking price you would consider.</p><input type="range" id="r-budget" min="400000" max="1500000" step="25000" value="${q.budget || 1500000}"></div>
         <div class="q"><h4>2. Minimum size <span class="val" id="v-m2">${q.min_m2 ? q.min_m2 + " m²" : "any"}</span></h4><p>Living area below which it is a no.</p><input type="range" id="r-m2" min="40" max="150" step="5" value="${q.min_m2 || 40}"></div>
@@ -545,12 +549,19 @@
     $("#r-m2").addEventListener("input", (e) => { $("#v-m2").textContent = +e.target.value <= 40 ? "any" : e.target.value + " m²"; });
     $("#r-m2").addEventListener("change", (e) => savePrefs({ min_m2: +e.target.value <= 40 ? null : +e.target.value }));
   }
-  let prefsTimer = null;
+  let prefsTimer = null, prefsPending = {};
   function savePrefs(patch) {
+    prefsPending = { ...prefsPending, ...patch };
     state.prefs = { ...(state.prefs || {}), ...patch }; const top = $("#prefs-body").scrollTop; renderPrefs(); $("#prefs-body").scrollTop = top; $("#prefs-saved").textContent = "Saving…";
     clearTimeout(prefsTimer); prefsTimer = setTimeout(async () => {
-      const { error } = await sb.from("app_events").upsert({ key: "couple_prefs", at: new Date().toISOString(), data: state.prefs }, { onConflict: "key" });
-      $("#prefs-saved").textContent = error ? "Not saved" : "Saved"; if (error) console.error(error); renderAll();
+      // Merge onto the latest shared answers first, so one phone never wipes what the other phone saved.
+      const cur = await sb.from("app_events").select("data").eq("key", "couple_prefs").maybeSingle();
+      const base = (cur.data && cur.data.data) || {};
+      const merged = Object.keys(prefsPending).length && !("__reset" in prefsPending) ? { ...base, ...prefsPending } : { ...prefsPending };
+      delete merged.__reset; merged.updated_by = state.me; merged.updated_at = new Date().toISOString(); prefsPending = {};
+      const { error } = await sb.from("app_events").upsert({ key: "couple_prefs", at: merged.updated_at, data: merged }, { onConflict: "key" });
+      if (!error) state.prefs = merged;
+      $("#prefs-saved").textContent = error ? "Not saved" : "Saved"; if (error) console.error(error); renderAll(); if (!$("#prefs").hidden) { const t2 = $("#prefs-body").scrollTop; renderPrefs(); $("#prefs-body").scrollTop = t2; }
     }, 400);
   }
   function openProfile() { renderProfile(); $("#profile").hidden = false; }
@@ -629,7 +640,7 @@
     const pk2 = t.closest("[data-pref-key]"); if (pk2) { const k = pk2.dataset.prefKey, v = pk2.dataset.prefVal; savePrefs({ [k]: v === "any" ? null : (isNaN(+v) ? v : +v) }); return; }
     const ar = t.closest("[data-area]"); if (ar) { const a = ar.dataset.area; const cur = (state.prefs || {}).areas || []; savePrefs({ areas: cur.includes(a) ? cur.filter((x) => x !== a) : [...cur, a] }); return; }
     const po = t.closest("[data-prio]"); if (po) { const k = po.dataset.prio; const old = (state.prefs || {}).priorities || []; savePrefs({ priorities: old.includes(k) ? old.filter((x) => x !== k) : old.length >= 3 ? old : [...old, k] }); return; }
-    if (t.closest("#prefs-reset")) { state.prefs = {}; savePrefs({}); return; }
+    if (t.closest("#prefs-reset")) { state.prefs = {}; prefsPending = { __reset: true }; savePrefs({}); return; }
     if (t.closest("#signout")) { sb.auth.signOut(); $("#profile").hidden = true; return; }
     if (t.closest("#signin")) { $("#profile").hidden = true; showAuth(); return; }
     if (t.closest("#auth-send")) { authSend(); return; } if (t.closest("#auth-verify")) { authVerify(); return; } if (t.closest("#auth-back")) { showAuth(); return; }

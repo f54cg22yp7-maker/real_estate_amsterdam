@@ -67,7 +67,7 @@ window.Affinity = (function () {
     if (q.max_vve && l.vve_monthly && l.vve_monthly > q.max_vve) s *= 0.85;
     return s;
   }
-  function hasPrefs(q) { return !!q && Object.keys(q).some((k) => q[k] != null && q[k] !== "" && q[k] !== "any" && !(Array.isArray(q[k]) && !q[k].length)); }
+  function hasPrefs(q) { return !!q && Object.keys(q).some((k) => !["updated_by", "updated_at"].includes(k) && q[k] != null && q[k] !== "" && q[k] !== "any" && !(Array.isArray(q[k]) && !q[k].length)); }
   function score(l, p, q) {
     const e = hasPrefs(q) ? explicit(l, q) : null; const g = learned(l, p);
     if (e == null && g == null) return null;

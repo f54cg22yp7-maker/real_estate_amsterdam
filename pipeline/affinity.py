@@ -178,7 +178,7 @@ def explicit(l, q):
 
 
 def has_prefs(q):
-    return bool(q) and any(v not in (None, "", "any") and not (isinstance(v, list) and not v) for v in q.values())
+    return bool(q) and any(k not in ("updated_by", "updated_at") and v not in (None, "", "any") and not (isinstance(v, list) and not v) for k, v in q.items())
 
 
 def score(l, p, q=None):
