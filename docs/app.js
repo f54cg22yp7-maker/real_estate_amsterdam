@@ -237,6 +237,7 @@
   function openWeekly() {
     const cands = weekCandidates(); if (!cands.length) return toast("Nothing to pick this week");
     if (!state.picks.size) cands.forEach((l) => { if (isMatch(l) || (viewing(l.id) || {}).stage === "selected") state.picks.add(l.id); });
+    state.availSlots = defaultSlots();
     renderWeekly(); $("#weekly").hidden = false;
   }
   function renderWeekly() {
@@ -250,28 +251,46 @@
           <div class="thumb" style="background-image:url('${esc(l.photo || "")}')"></div>
           <div class="info"><div class="t1">${esc(l.street)} · ${eur(l.price)}</div><div class="t2">${esc(who)} · ${l.m2} m² · ${esc(ownershipText(l)[0])}${fit(l) != null ? " · " + fit(l) + "% fit" : ""}</div></div></div>`; }).join("")}</div>
       <div class="counter"><span>Selected</span><span><b>${n}</b> / about ${state.weeklyTarget} per week</span></div>
-      <div class="card-block"><h4>Availability (optional, replaces the default sentence)</h4><textarea id="avail" placeholder="${esc(defaultAvailability())}"></textarea></div>
-      <div class="card-block"><h4>Email preview</h4><div class="preview" id="preview">${esc(emailBody([...state.picks].map(byId).filter(Boolean), ""))}</div></div>
+      <div class="card-block"><h4>Availability</h4>
+        <div class="stack">${state.availSlots.map((s, i) => `
+          <div class="avail-row">
+            <input type="date" data-slot-date="${i}" value="${esc(s.date || "")}">
+            <div class="seg-times">${TIMES.map((t) => `<button type="button" class="chip-btn ${s.times.includes(t) ? "on" : ""}" data-slot-time="${i}" data-time="${t}">${t}</button>`).join("")}</div>
+            ${state.availSlots.length > 1 ? `<button type="button" class="rm" data-slot-remove="${i}" aria-label="Remove date">✕</button>` : ""}
+          </div>`).join("")}</div>
+        <button type="button" class="linkbtn" id="avail-add">+ Add another date</button>
+      </div>
+      <div class="card-block"><h4>Email preview</h4><div class="preview" id="preview">${esc(emailBody([...state.picks].map(byId).filter(Boolean), slotsSentence(state.availSlots)))}</div></div>
       <div class="stack" style="margin-top:12px">
         <button class="primary accent" id="send-job" ${n ? "" : "disabled"}>Send request from Pand</button>
         <button class="primary secondary" id="send-phone" ${n ? "" : "disabled"}>Send from my phone (Mail app)</button>
         <button class="primary danger" data-close="weekly">Not this week</button></div>`;
-    $("#avail").addEventListener("input", () => { $("#preview").textContent = emailBody([...state.picks].map(byId).filter(Boolean), $("#avail").value); });
+    document.querySelectorAll("[data-slot-date]").forEach((el) => el.addEventListener("change", () => { state.availSlots[+el.dataset.slotDate].date = el.value; renderWeekly(); }));
   }
-  function nextWeekSlots() {
+  const TIMES = ["morning", "afternoon", "evening"];
+  function defaultSlots() {
     const today = new Date(); const mon = new Date(today); mon.setDate(today.getDate() + (7 - ((today.getDay() + 6) % 7)));
-    const f = (d) => d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+    const iso = (d) => d.toISOString().slice(0, 10);
     const wed = new Date(mon); wed.setDate(mon.getDate() + 2); const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
-    return `${f(wed)} in the afternoon, or ${f(fri)} in the morning or afternoon`;
+    return [{ date: iso(wed), times: ["afternoon"] }, { date: iso(fri), times: ["morning", "afternoon"] }];
   }
-  function defaultAvailability() { return `For viewings we are available ${nextWeekSlots()}. If none of those work we can usually be flexible, just let us know what is possible.`; }
+  const fmtSlotDate = (iso) => iso ? new Date(iso + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }) : "";
+  const joinList = (a) => a.length <= 1 ? (a[0] || "") : a.slice(0, -1).join(", ") + " or " + a[a.length - 1];
+  const joinDates = (a) => a.length <= 1 ? (a[0] || "") : a.slice(0, -1).join(", ") + ", or " + a[a.length - 1];
+  function slotsSentence(slots) {
+    const filled = (slots || []).filter((s) => s.date && s.times.length);
+    if (!filled.length) return "";
+    const parts = filled.map((s) => `${fmtSlotDate(s.date)} in the ${joinList(s.times)}`);
+    return `For viewings we are available ${joinDates(parts)}. If none of those work we can usually be flexible, just let us know what is possible.`;
+  }
+  function defaultAvailability() { return "We are flexible on timing, just let us know what works for you."; }
   function emailBody(ls, avail) {
     const lines = ls.map((l) => `${l.address}\n${l.url}\n${eur(l.price)},- k.k. · ${l.m2} m² · ${ownershipLine(l)}`);
     return `${CFG.agent.greeting}\n\nHope all is well! We went through this week's listings and would like to view the following ${ls.length === 1 ? "one" : ls.length}:\n\n${lines.join("\n\n")}\n\n${(avail || "").trim() || defaultAvailability()}\n\nThanks in advance!\n\nBest,\nDavit & Luis`;
   }
   async function sendRequest(via) {
     const ids = [...state.picks]; if (!ids.length) return;
-    const id = `req-${Date.now()}`; const now = new Date().toISOString(); const avail = ($("#avail").value || "").trim();
+    const id = `req-${Date.now()}`; const now = new Date().toISOString(); const avail = slotsSentence(state.availSlots);
     const req = { id, listing_ids: ids, created_by: state.me, created_at: now, availability: avail || null, sent_at: via === "phone" ? now : null, sent_via: via === "phone" ? "phone" : null };
     const rows = ids.map((lid) => ({ listing_id: lid, stage: "requested", selected_by: state.me, request_id: id, updated_at: now }));
     const r1 = await sb.from("viewing_requests").insert(req); if (r1.error) { console.error(r1.error); return toast("Could not save the request"); }
@@ -625,6 +644,9 @@
     const cl = t.closest("[data-close]"); if (cl) { $("#" + cl.dataset.close).hidden = true; if (cl.dataset.close === "eval" || cl.dataset.close === "profile") renderAll(); return; }
     if (t.closest("[data-weekly]")) { $("#profile").hidden = true; openWeekly(); return; }
     const pk = t.closest("[data-pick]"); if (pk) { const id = pk.dataset.pick; state.picks.has(id) ? state.picks.delete(id) : state.picks.add(id); renderWeekly(); return; }
+    const slt = t.closest("[data-slot-time]"); if (slt) { const times = state.availSlots[+slt.dataset.slotTime].times; const i = times.indexOf(slt.dataset.time); i >= 0 ? times.splice(i, 1) : times.push(slt.dataset.time); renderWeekly(); return; }
+    const slr = t.closest("[data-slot-remove]"); if (slr) { state.availSlots.splice(+slr.dataset.slotRemove, 1); renderWeekly(); return; }
+    if (t.closest("#avail-add")) { state.availSlots.push({ date: "", times: [] }); renderWeekly(); return; }
     if (t.closest("#send-job")) { sendRequest("gmail"); return; } if (t.closest("#send-phone")) { sendRequest("phone"); return; }
     const vt = t.closest("[data-vote]"); if (vt && state.sheetId) { castVote(byId(state.sheetId), vt.dataset.vote); return; }
     const st = t.closest("[data-stage]"); if (st && state.sheetId) { setStage(state.sheetId, st.dataset.stage); return; }

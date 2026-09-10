@@ -209,9 +209,15 @@ input[type=range] { width: 100%; accent-color: var(--ink); margin: 6px 0; }
 .stage .steps { display: flex; gap: 4px; }
 .stage .steps i { width: 22px; height: 6px; border-radius: 3px; background: var(--panel-3); }
 .stage .steps i.on { background: var(--accent); }
-input[type=datetime-local], input[type=email], input[type=text], textarea { width: 100%; font: inherit; color: var(--ink); background: var(--panel-2); border: 0; border-radius: 16px; padding: 13px 14px; }
+input[type=datetime-local], input[type=date], input[type=email], input[type=text], textarea { width: 100%; font: inherit; color: var(--ink); background: var(--panel-2); border: 0; border-radius: 16px; padding: 13px 14px; }
 input[type=text].code { font-size: 22px; letter-spacing: .2em; text-align: center; font-weight: 800; }
 textarea { min-height: 84px; resize: vertical; }
+.avail-row { display: flex; align-items: center; gap: 8px; }
+.avail-row input[type=date] { flex: 0 0 auto; width: auto; }
+.seg-times { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+.chip-btn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.chip-btn.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.avail-row .rm { background: none; border: 0; color: var(--muted); font-size: 15px; padding: 6px; flex: 0 0 auto; }
 .people-scores { display: flex; gap: 8px; font-size: 12.5px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
 .people-scores img { width: 18px; height: 18px; border-radius: 50%; vertical-align: -4px; margin-right: 3px; }
 
