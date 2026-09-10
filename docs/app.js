@@ -610,9 +610,18 @@
         ${CFG.shortlistSheet ? `<div class="setting"><div class="l">Shortlist sheet</div><a href="${esc(CFG.shortlistSheet)}" target="_blank" rel="noopener">Open</a></div>` : ""}
         <div class="setting"><div class="l">Listings in Pand</div><span class="pill">${state.listings.length}</span></div>
         <div class="setting"><div class="l">Version</div><span class="pill">${esc(CFG.version)}</span></div>
+        <div class="setting"><div class="l">Cache<small>If your listings or matches look out of date, clear the cache and reload</small></div><button class="pill ink" id="clear-cache" style="border:0;padding:8px 14px">Clear cache</button></div>
       </div>`;
   }
   function renderMe() { const p = state.prof; const me = person(state.me); $("#me-avatar").src = (p && p.avatar_url) || me.avatar; $("#me-name").textContent = me.name; }
+  async function clearCache() {
+    ["who", "theme", "weeklyTarget", "guest", "weeklySeen"].forEach((k) => localStorage.removeItem(k));
+    try {
+      if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.map((k) => caches.delete(k))); }
+      if (navigator.serviceWorker) { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map((r) => r.unregister())); }
+    } catch (e) { console.warn("cache clear", e); }
+    location.href = location.pathname + "?t=" + Date.now();
+  }
 
   /* ---------- Shell ---------- */
   function renderAll() { renderMe(); renderDeck(); renderSaved(); renderViewings(); if (state.view === "map") renderBigMap(); if (!$("#sheet").hidden) renderSheet(); if (!$("#weekly").hidden) renderWeekly(); }
@@ -664,6 +673,7 @@
     const po = t.closest("[data-prio]"); if (po) { const k = po.dataset.prio; const old = (state.prefs || {}).priorities || []; savePrefs({ priorities: old.includes(k) ? old.filter((x) => x !== k) : old.length >= 3 ? old : [...old, k] }); return; }
     if (t.closest("#prefs-reset")) { state.prefs = {}; prefsPending = { __reset: true }; savePrefs({}); return; }
     if (t.closest("#signout")) { sb.auth.signOut(); $("#profile").hidden = true; return; }
+    if (t.closest("#clear-cache")) { clearCache(); return; }
     if (t.closest("#signin")) { $("#profile").hidden = true; showAuth(); return; }
     if (t.closest("#auth-send")) { authSend(); return; } if (t.closest("#auth-verify")) { authVerify(); return; } if (t.closest("#auth-back")) { showAuth(); return; }
     const oa = t.closest("[data-oauth]"); if (oa) { authOAuth(oa.dataset.oauth); return; }
