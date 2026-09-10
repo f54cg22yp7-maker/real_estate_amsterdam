@@ -610,8 +610,8 @@
         ${CFG.shortlistSheet ? `<div class="setting"><div class="l">Shortlist sheet</div><a href="${esc(CFG.shortlistSheet)}" target="_blank" rel="noopener">Open</a></div>` : ""}
         <div class="setting"><div class="l">Listings in Pand</div><span class="pill">${state.listings.length}</span></div>
         <div class="setting"><div class="l">Version</div><span class="pill">${esc(CFG.version)}</span></div>
-        <div class="setting"><div class="l">Cache<small>If your listings or matches look out of date, clear the cache and reload</small></div><button class="pill ink" id="clear-cache" style="border:0;padding:8px 14px">Clear cache</button></div>
-      </div>`;
+      </div>
+      <div class="card-block" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><button class="primary" id="clear-cache" style="width:100%;box-sizing:border-box">Clear cache</button><small style="color:var(--muted);display:block;margin-top:8px">If your listings or matches look out of date, clear the browser cache and reload the page.</small></div>`;
   }
   function renderMe() { const p = state.prof; const me = person(state.me); $("#me-avatar").src = (p && p.avatar_url) || me.avatar; $("#me-name").textContent = me.name; }
   async function clearCache() {
