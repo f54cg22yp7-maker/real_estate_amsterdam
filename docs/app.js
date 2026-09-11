@@ -28,6 +28,23 @@
   const photosOf = (l, n) => { const a = (l.photos && l.photos.length ? l.photos : [l.photo]).filter(Boolean); return n ? a.slice(0, n) : a; };
 
   function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => (t.hidden = true), 2200); }
+
+  /* Tracks writes still in flight to Supabase, keyed by a caller-chosen id. Two problems this
+     solves: (1) load() re-pulls from the server every 30s / on focus / on visibility change to
+     pick up the other person's swipes — if it lands before an in-flight write commits, it would
+     silently overwrite the optimistic local change with stale server data; reapplyPending() re-
+     patches every still-pending change on top of each fresh pull. (2) actions like Clear cache
+     navigate away immediately, which cancels any request still in flight — clearCache() awaits
+     these before it does that. */
+  const pendingWrites = new Map();   // key -> { promise, apply() }
+  function trackWrite(key, run, apply) {
+    const p = run();
+    pendingWrites.set(key, { promise: p, apply });
+    p.finally(() => { const cur = pendingWrites.get(key); if (cur && cur.promise === p) pendingWrites.delete(key); });
+    return p;
+  }
+  function reapplyPending() { pendingWrites.forEach(({ apply }) => apply()); }
+  window.addEventListener("beforeunload", (e) => { if (pendingWrites.size) { e.preventDefault(); e.returnValue = ""; } });
   function voteOf(id, who) { return state.votes.find((v) => v.listing_id === id && v.who === who); }
   function isMatch(l) { return CFG.people.every((p) => (voteOf(l.id, p.id) || {}).vote === "yes"); }
   function viewing(id) { return state.viewings[id]; }
@@ -164,18 +181,28 @@
     card.style.transform = `translate(0, -700px) scale(.92)`;
     setTimeout(() => superLike(l), 250);
   }
-  async function castVote(l, vote) {
+  function castVote(l, vote) {
     const row = { listing_id: l.id, who: state.me, vote, at: new Date().toISOString() };
     const prev = state.votes.findIndex((v) => v.listing_id === l.id && v.who === state.me);
     if (prev >= 0) state.votes[prev] = row; else state.votes.push(row);
     state.lastVote = { listing: l, vote }; recomputeProfile(); renderAll();
-    const { error } = await sb.from("votes").upsert(row, { onConflict: "listing_id,who" });
-    if (error) { toast("Could not save, retrying"); console.error(error); setTimeout(() => sb.from("votes").upsert(row, { onConflict: "listing_id,who" }), 2000); }
-    else if (vote === "yes" && isMatch(l)) toast(`It's a match with ${nameOf(other())}`);
+    const key = "vote:" + row.listing_id + ":" + row.who;
+    return trackWrite(key, async () => {
+      let { error } = await sb.from("votes").upsert(row, { onConflict: "listing_id,who" });
+      if (error) {
+        toast("Could not save, retrying"); console.error(error);
+        await new Promise((r) => setTimeout(r, 2000));
+        ({ error } = await sb.from("votes").upsert(row, { onConflict: "listing_id,who" }));
+        if (error) console.error(error);
+      }
+      if (error) toast("Vote not saved — check your connection");
+      else if (vote === "yes" && isMatch(l)) toast(`It's a match with ${nameOf(other())}`);
+    }, () => { const i = state.votes.findIndex((v) => v.listing_id === row.listing_id && v.who === row.who); if (i >= 0) state.votes[i] = row; else state.votes.push(row); });
   }
   async function undo() {
     if (!state.lastVote) return toast("Nothing to undo");
     const { listing } = state.lastVote;
+    const pend = pendingWrites.get("vote:" + listing.id + ":" + state.me); if (pend) await pend.promise.catch(() => {});
     state.votes = state.votes.filter((v) => !(v.listing_id === listing.id && v.who === state.me)); state.lastVote = null; recomputeProfile(); renderAll();
     const { error } = await sb.from("votes").delete().match({ listing_id: listing.id, who: state.me }); if (error) toast("Undo failed");
   }
@@ -404,14 +431,16 @@
     tr.onscroll = () => { $("#lb-count").textContent = `${Math.round(tr.scrollLeft / tr.clientWidth) + 1} / ${photos.length}`; };
     attachSlides({ querySelector: (q) => (q === ".slides" ? tr : null), querySelectorAll: () => [] }, () => (lb.hidden = true));
   }
-  async function setStage(id, stage) {
+  function setStage(id, stage) {
     const now = new Date().toISOString(); const prev = viewing(id) || {};
     const row = { listing_id: id, stage, selected_by: prev.selected_by || state.me, request_id: prev.request_id || null, scheduled_at: prev.scheduled_at || null, notes: prev.notes || null, updated_at: now };
     if (stage === "scheduled") { const val = ($("#sched") || {}).value; if (!val) return toast("Pick a date first"); row.scheduled_at = new Date(val).toISOString(); }
     if (stage === "selected") row.selected_at = now;
     state.viewings[id] = row; renderAll(); if (!$("#sheet").hidden) renderSheet();
-    const { error } = await sb.from("viewings").upsert(row, { onConflict: "listing_id" });
-    if (error) { console.error(error); toast("Could not save"); } else toast({ selected: "Added to the viewing list", scheduled: "Viewing scheduled", dropped: "Removed", viewed: "Marked as viewed" }[stage] || "Saved");
+    return trackWrite("viewing:" + id, async () => {
+      const { error } = await sb.from("viewings").upsert(row, { onConflict: "listing_id" });
+      if (error) { console.error(error); toast("Could not save"); } else toast({ selected: "Added to the viewing list", scheduled: "Viewing scheduled", dropped: "Removed", viewed: "Marked as viewed" }[stage] || "Saved");
+    }, () => { state.viewings[id] = row; });
   }
 
   /* ---------- Quick status change & archive (swipe-left row actions) ---------- */
@@ -424,29 +453,36 @@
       <div class="detail-area">Current: ${esc(l.status || "available")}</div>
       <div class="stack">${STATUS_OPTS.map((o) => `<button class="primary ${o === (l.status || "available") ? "accent" : "secondary"}" data-set-status="${o}">${o[0].toUpperCase() + o.slice(1)}</button>`).join("")}</div>`;
   }
-  async function setListingStatus(id, status) {
+  function setListingStatus(id, status) {
     const l = byId(id); if (!l) return; const now = new Date().toISOString();
     l.status = status; l.updated_at = now; renderAll(); if (!$("#statusmenu").hidden) renderStatusMenu();
-    const { error } = await sb.from("listings").update({ status, updated_at: now }).eq("id", id);
-    if (error) { console.error(error); toast("Could not save status"); } else toast("Status updated");
+    return trackWrite("listing:" + id + ":status", async () => {
+      const { error } = await sb.from("listings").update({ status, updated_at: now }).eq("id", id);
+      if (error) { console.error(error); toast("Could not save status"); } else toast("Status updated");
+    }, () => { const ll = byId(id); if (ll) { ll.status = status; ll.updated_at = now; } });
   }
-  async function archiveListing(id, val) {
+  function archiveListing(id, val) {
     const l = byId(id); if (!l) return; l.archived = val; renderAll();
-    const { error } = await sb.from("listings").update({ archived: val }).eq("id", id);
-    if (error) { console.error(error); toast("Could not save"); } else toast(val ? "Archived" : "Restored");
+    return trackWrite("listing:" + id + ":archived", async () => {
+      const { error } = await sb.from("listings").update({ archived: val }).eq("id", id);
+      if (error) { console.error(error); toast("Could not save"); } else toast(val ? "Archived" : "Restored");
+    }, () => { const ll = byId(id); if (ll) ll.archived = val; });
   }
 
   /* ---------- Super like: like + request a viewing immediately, skipping the weekly batch ---------- */
-  async function requestViewingNow(l) {
+  function requestViewingNow(l) {
     const cur = viewing(l.id);
     if (cur && ["scheduled", "viewed"].includes(cur.stage)) return toast("Already further along in the viewing pipeline");
     if (cur && cur.stage === "requested") return toast("Viewing already requested");
     const id = `req-${Date.now()}`; const now = new Date().toISOString();
     const req = { id, listing_ids: [l.id], created_by: state.me, created_at: now, availability: null, sent_at: null, sent_via: null };
     const row = { listing_id: l.id, stage: "requested", selected_by: state.me, request_id: id, updated_at: now };
-    const r1 = await sb.from("viewing_requests").insert(req); if (r1.error) { console.error(r1.error); return toast("Could not queue the viewing request"); }
-    const r2 = await sb.from("viewings").upsert(row, { onConflict: "listing_id" }); if (r2.error) { console.error(r2.error); return toast("Saved request, but viewing failed"); }
-    state.requests.push(req); state.viewings[l.id] = row; renderAll();
+    state.viewings[l.id] = row; renderAll();
+    return trackWrite("viewing:" + l.id, async () => {
+      const r1 = await sb.from("viewing_requests").insert(req); if (r1.error) { console.error(r1.error); toast("Could not queue the viewing request"); return; }
+      const r2 = await sb.from("viewings").upsert(row, { onConflict: "listing_id" }); if (r2.error) { console.error(r2.error); toast("Saved request, but viewing failed"); return; }
+      state.requests.push(req);
+    }, () => { state.viewings[l.id] = row; });
   }
   async function superLike(l) {
     await castVote(l, "yes");
@@ -707,6 +743,13 @@
   }
   function renderMe() { const p = state.prof; const me = person(state.me); $("#me-avatar").src = (p && p.avatar_url) || me.avatar; $("#me-name").textContent = me.name; }
   async function clearCache() {
+    const btn = $("#clear-cache");
+    const writes = [...pendingWrites.values()].map((w) => w.promise);
+    if (writes.length) {
+      if (btn) { btn.disabled = true; btn.textContent = "Saving your last changes…"; }
+      toast("Saving your last changes…");
+      await Promise.race([Promise.allSettled(writes), new Promise((r) => setTimeout(r, 6000))]);
+    }
     ["who", "theme", "weeklyTarget", "guest", "weeklySeen"].forEach((k) => localStorage.removeItem(k));
     try {
       if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.map((k) => caches.delete(k))); }
@@ -728,6 +771,7 @@
     state.photos = {}; (ph.data || []).forEach((p) => (state.photos[p.listing_id] = state.photos[p.listing_id] || []).push(p));
     state.requests = rq.data || [];
     if (pf && pf.data && pf.data.data) state.prefs = pf.data.data;
+    reapplyPending();   // don't let a fresh-but-stale pull clobber a swipe/change still in flight
     recomputeProfile(); renderAll(); maybeSaturday();
   }
   function maybeSaturday() {
@@ -766,7 +810,7 @@
     const vd = t.closest("[data-v]"); if (vd && !$("#eval").hidden) { saveEval({ verdict: vd.dataset.v }); return; }
     if (t.closest("#add-photo")) { $("#photo-input").click(); return; }
     const pp = t.closest("[data-person]"); if (pp) { state.me = pp.dataset.person; localStorage.setItem("who", state.me); state.lastVote = null; saveProfile({ person: state.me }); renderProfile(); renderAll(); return; }
-    const th = t.closest("[data-theme]"); if (th && !$("#profile").hidden) { applyTheme(th.dataset.theme); saveProfile({ theme: th.dataset.theme }); renderProfile(); if (state.bigmap) renderBigMap(); return; }
+    const th = t.closest("[data-theme]"); if (th && th !== document.documentElement && !$("#profile").hidden) { applyTheme(th.dataset.theme); saveProfile({ theme: th.dataset.theme }); renderProfile(); if (state.bigmap) renderBigMap(); return; }
     const tg = t.closest("[data-target]"); if (tg) { state.weeklyTarget = +tg.dataset.target; localStorage.setItem("weeklyTarget", state.weeklyTarget); saveProfile({ prefs: { ...((state.prof || {}).prefs || {}), weeklyTarget: state.weeklyTarget } }); renderProfile(); renderViewings(); return; }
     if (t.closest("[data-prefs]")) { $("#profile").hidden = true; openPrefs(); return; }
     if (t.closest("[data-lb-close]")) { $("#lightbox").hidden = true; return; }
