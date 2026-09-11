@@ -28,6 +28,7 @@
     <div class="actions" id="actions">
       <button class="btn undo" id="btn-undo" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
       <button class="btn no" id="btn-no" aria-label="Pass"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      <button class="btn super" id="btn-super" aria-label="Super like — request a viewing now"><svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.9L22 9.5l-5.4 4.9L18 22l-6-3.6L6 22l1.4-7.6L2 9.5l7.1-.6z"/></svg></button>
       <button class="btn yes" id="btn-yes" aria-label="Like"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-9.3-9.2C1.5 8 3.6 4.5 7.2 4.5c2 0 3.4 1.1 4.8 2.7 1.4-1.6 2.8-2.7 4.8-2.7 3.6 0 5.7 3.5 4.5 6.8-1.8 4.6-9.3 9.2-9.3 9.2z"/></svg></button>
       <button class="btn info" id="btn-info" aria-label="Details"><svg viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></svg></button>
     </div>
@@ -38,6 +39,7 @@
       <button data-seg="likes" class="active">Likes <b id="n-likes"></b></button>
       <button data-seg="matches">Matches <b id="n-matches"></b></button>
       <button data-seg="passed">Passed</button>
+      <button data-seg="archived">Archived <b id="n-archived"></b></button>
     </div>
     <div class="list" id="saved-list"></div>
   </section>
@@ -80,6 +82,12 @@
 <div id="profile" class="sheet" hidden>
   <div class="sheet-head"><button class="close" data-close="profile" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button><div class="sheet-title">You</div><div class="spacer"></div></div>
   <div class="sheet-body" id="profile-body"></div>
+</div>
+
+<!-- Quick status change (revealed by swiping a list row) -->
+<div id="statusmenu" class="sheet" hidden>
+  <div class="sheet-head"><button class="close" data-close="statusmenu" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button><div class="sheet-title">Change status</div><div class="spacer"></div></div>
+  <div class="sheet-body" id="statusmenu-body"></div>
 </div>
 
 <!-- Preferences questionnaire -->

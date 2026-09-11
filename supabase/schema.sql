@@ -206,3 +206,11 @@ begin
     alter publication supabase_realtime add table public.profiles;
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- v4: manual archive flag. A listing either partner archives disappears from
+-- both phones' lists (Saved, Viewings, Swipe, Map) without touching votes or
+-- the enrichment pipeline, which never sends this column so it is never
+-- clobbered by an upsert from pipeline/job.py. Safe to re-run.
+-- ---------------------------------------------------------------------------
+alter table public.listings add column if not exists archived boolean not null default false;

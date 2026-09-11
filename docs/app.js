@@ -34,7 +34,7 @@
   function evalOf(id, who) { return state.evals[id + ":" + who]; }
   function fit(l) { return window.Affinity.score(l, state.profile, state.prefs); }
   const img = (u, w, h) => (u || "").replace(/width=\d+/, "width=" + w).replace(/height=\d+/, "height=" + h);
-  function queue() { return state.listings.filter((l) => !HIDDEN.has(l.status) && !voteOf(l.id, state.me)); }
+  function queue() { return state.listings.filter((l) => !HIDDEN.has(l.status) && !l.archived && !voteOf(l.id, state.me)); }
   function isoWeek(d) { d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const day = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() + 4 - day); const y0 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1)); return `${d.getUTCFullYear()}-W${String(Math.ceil((((d - y0) / 864e5) + 1) / 7)).padStart(2, "0")}`; }
   function statusBadge(l) {
     if (!l.status || l.status === "available") return `<div class="badge">Available</div>`;
@@ -90,7 +90,7 @@
         <div class="slides" data-n="${ph.length}">${ph.map((p) => `<img src="${esc(img(p, 1200, 800))}" alt="" draggable="false">`).join("")}</div>
         ${ph.length > 1 ? `<div class="dots">${ph.map((_, i) => `<i class="${i === 0 ? "on" : ""}"></i>`).join("")}</div>` : ""}
         ${statusBadge(l)}${f != null ? `<div class="fit">${f}% fit</div>` : ""}
-        <div class="stamp yes">LIKE</div><div class="stamp no">PASS</div>
+        <div class="stamp yes">LIKE</div><div class="stamp no">PASS</div><div class="stamp super">SUPER LIKE</div>
         <div class="grad"></div>
         <div class="headline">
           <div class="price">${eur(l.price)}<small>${l.price_per_m2 ? eur(l.price_per_m2) + "/m²" : ""}</small></div>
@@ -99,7 +99,7 @@
         </div>
       </div>
       <div class="body">
-        <div class="hint"><span>Swipe right to like, left to pass · scroll for more · tap for the full profile</span></div>
+        <div class="hint"><span>Swipe right to like, left to pass, up to super like · scroll for more · tap for the full profile</span></div>
         <div class="chips">${chipsHtml(l)}</div>
         <div class="minimap" id="mm-${l.id}"></div>
         ${kvHtml(l)}
@@ -129,19 +129,26 @@
   }
   function attachDrag(card, l) {
     let sx = 0, sy = 0, dx = 0, dy = 0, dragging = false, decided = null, t0 = 0, target = null;
-    const yes = card.querySelector(".stamp.yes"), no = card.querySelector(".stamp.no");
+    const yes = card.querySelector(".stamp.yes"), no = card.querySelector(".stamp.no"), sup = card.querySelector(".stamp.super");
     const onDown = (e) => { if (e.target.closest("button,a,.leaflet-container,.slides")) return; const p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY; dx = dy = 0; dragging = true; decided = null; t0 = Date.now(); target = e.target; card.style.transition = "none"; };
     const onMove = (e) => {
       if (!dragging) return; const p = e.touches ? e.touches[0] : e; dx = p.clientX - sx; dy = p.clientY - sy;
       if (decided === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) decided = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
-      if (decided !== "h") return; if (e.cancelable) e.preventDefault();
-      card.style.transform = `translate(${dx}px, ${dy * 0.2}px) rotate(${dx / 18}deg)`;
-      yes.style.opacity = Math.min(1, Math.max(0, dx / 90)); no.style.opacity = Math.min(1, Math.max(0, -dx / 90));
+      if (decided === "h") {
+        if (e.cancelable) e.preventDefault();
+        card.style.transform = `translate(${dx}px, ${dy * 0.2}px) rotate(${dx / 18}deg)`;
+        yes.style.opacity = Math.min(1, Math.max(0, dx / 90)); no.style.opacity = Math.min(1, Math.max(0, -dx / 90));
+      } else if (decided === "v" && dy < -8) {
+        if (e.cancelable) e.preventDefault();
+        card.style.transform = `translate(0, ${Math.max(dy, -160)}px)`;
+        if (sup) sup.style.opacity = Math.min(1, Math.max(0, -dy / 90));
+      }
     };
     const onUp = () => {
       if (!dragging) return; dragging = false;
       if (decided === "h" && Math.abs(dx) > 100) return fly(card, dx > 0 ? "yes" : "no", l);
-      card.style.transition = "transform .25s"; card.style.transform = ""; yes.style.opacity = no.style.opacity = 0;
+      if (decided === "v" && dy < -110) return flySuper(card, l);
+      card.style.transition = "transform .25s"; card.style.transform = ""; yes.style.opacity = no.style.opacity = 0; if (sup) sup.style.opacity = 0;
       if (decided === null && Date.now() - t0 < 400 && target && target.closest(".body")) openSheet(l.id);   // a tap
     };
     card.addEventListener("touchstart", onDown, { passive: true }); card.addEventListener("touchmove", onMove, { passive: false }); card.addEventListener("touchend", onUp);
@@ -151,6 +158,11 @@
     card.style.transition = "transform .35s ease-in";
     card.style.transform = `translate(${vote === "yes" ? 600 : -600}px, -40px) rotate(${vote === "yes" ? 30 : -30}deg)`;
     setTimeout(() => castVote(l, vote), 250);
+  }
+  function flySuper(card, l) {
+    card.style.transition = "transform .35s ease-in";
+    card.style.transform = `translate(0, -700px) scale(.92)`;
+    setTimeout(() => superLike(l), 250);
   }
   async function castVote(l, vote) {
     const row = { listing_id: l.id, who: state.me, vote, at: new Date().toISOString() };
@@ -182,17 +194,53 @@
   }
   function rowHtml(l, note, cls) {
     const f = fit(l);
-    return `<button class="row" data-open="${l.id}">
-      <div class="thumb" style="background-image:url('${esc(l.photo || "")}')"></div>
-      <div class="info"><div class="t1"><span>${esc(l.street || "")}</span><span>${eur(l.price)}</span></div>
-      <div class="t2">${esc(area(l))} · ${l.m2 || "?"} m² · ${l.price_per_m2 ? eur(l.price_per_m2) + "/m²" : ""} · ${esc(ownershipText(l)[0])}</div>
-      <div class="t3 ${cls}">${note}${f != null ? `<span class="pill fit">${f}% fit</span>` : ""}${stagePill(l.id)}</div></div></button>`;
+    const archiveBtn = l.archived ? `<button class="ract restore" data-row-unarchive="${l.id}">Restore</button>` : `<button class="ract archive" data-row-archive="${l.id}">Archive</button>`;
+    return `<div class="row-wrap" data-wrap="${l.id}">
+      <div class="row-actions"><button class="ract status" data-row-status="${l.id}">Status</button>${archiveBtn}</div>
+      <button class="row" data-open="${l.id}">
+        <div class="thumb" style="background-image:url('${esc(l.photo || "")}')"></div>
+        <div class="info"><div class="t1"><span>${esc(l.street || "")}</span><span>${eur(l.price)}</span></div>
+        <div class="t2">${esc(area(l))} · ${l.m2 || "?"} m² · ${l.price_per_m2 ? eur(l.price_per_m2) + "/m²" : ""} · ${esc(ownershipText(l)[0])}</div>
+        <div class="t3 ${cls}">${note}${f != null ? `<span class="pill fit">${f}% fit</span>` : ""}${stagePill(l.id)}</div></div></button>
+    </div>`;
+  }
+  let openRow = null;
+  function closeRow() { if (openRow) { openRow.classList.remove("open"); const r = openRow.querySelector(".row"); if (r) r.style.transform = ""; openRow = null; } }
+  function attachRowSwipes(container) {
+    openRow = null;
+    const REVEAL = 168, THRESH = REVEAL * 0.35;   // matches two 84px .ract buttons
+    container.querySelectorAll(".row-wrap").forEach((wrap) => {
+      const row = wrap.querySelector(".row"); if (!row) return;
+      let sx = 0, dx = 0, dragging = false, startedOpen = false;
+      const onDown = (e) => {
+        if (e.target.closest(".row-actions")) return;
+        if (openRow && openRow !== wrap) closeRow();
+        sx = e.clientX; dx = 0; dragging = true; startedOpen = wrap.classList.contains("open"); row.style.transition = "none";
+        try { row.setPointerCapture(e.pointerId); } catch (err) {}
+      };
+      const onMove = (e) => {
+        if (!dragging) return; dx = e.clientX - sx;
+        let t = (startedOpen ? -REVEAL : 0) + dx; t = Math.min(0, Math.max(-REVEAL - 24, t));
+        row.style.transform = `translateX(${t}px)`;
+      };
+      const onUp = () => {
+        if (!dragging) return; dragging = false; row.style.transition = "transform .2s ease";
+        const t = (startedOpen ? -REVEAL : 0) + dx;
+        if (t < -THRESH) {
+          row.style.transform = `translateX(-${REVEAL}px)`;
+          if (!startedOpen) { wrap._suppressClick = true; setTimeout(() => (wrap._suppressClick = false), 300); }
+          wrap.classList.add("open"); openRow = wrap;
+        } else { row.style.transform = ""; wrap.classList.remove("open"); if (openRow === wrap) openRow = null; }
+      };
+      row.addEventListener("pointerdown", onDown); row.addEventListener("pointermove", onMove); row.addEventListener("pointerup", onUp); row.addEventListener("pointercancel", onUp);
+    });
   }
   function renderSaved() {
-    const mine = state.listings.filter((l) => (voteOf(l.id, state.me) || {}).vote === "yes");
-    const matches = state.listings.filter(isMatch);
-    const passed = state.listings.filter((l) => (voteOf(l.id, state.me) || {}).vote === "no");
-    $("#n-likes").textContent = mine.length || ""; $("#n-matches").textContent = matches.length || "";
+    const mine = state.listings.filter((l) => !l.archived && (voteOf(l.id, state.me) || {}).vote === "yes");
+    const matches = state.listings.filter((l) => !l.archived && isMatch(l));
+    const passed = state.listings.filter((l) => !l.archived && (voteOf(l.id, state.me) || {}).vote === "no");
+    const archived = state.listings.filter((l) => l.archived);
+    $("#n-likes").textContent = mine.length || ""; $("#n-matches").textContent = matches.length || ""; $("#n-archived").textContent = archived.length || "";
     const sortFit = (a) => a.slice().sort((x, y) => (fit(y) || 0) - (fit(x) || 0));
     let html = "";
     if (state.savedTab === "likes") html = sortFit(mine).map((l) => { const th = voteOf(l.id, other());
@@ -200,15 +248,17 @@
       || `<div class="empty"><h2>No likes yet</h2><div>Swipe right on anything you would actually visit.</div></div>`;
     else if (state.savedTab === "matches") html = sortFit(matches).map((l) => rowHtml(l, `Both liked · ${esc(l.status || "available")}`, "match")).join("")
       || `<div class="empty"><h2>No matches yet</h2><div>A match appears when you both like the same place.</div></div>`;
+    else if (state.savedTab === "archived") html = archived.map((l) => rowHtml(l, "Archived · swipe left to restore", "wait")).join("") || `<div class="empty"><h2>Nothing archived</h2><div>Swipe left on any listing and tap Archive to tidy it away here.</div></div>`;
     else html = passed.map((l) => rowHtml(l, "You passed · tap to reconsider", "wait")).join("") || `<div class="empty"><h2>Nothing passed</h2></div>`;
     $("#saved-list").innerHTML = html;
+    attachRowSwipes($("#saved-list"));
   }
 
   /* ---------- Weekly pick and viewings ---------- */
   function weekCandidates() {
     const since = Date.now() - 7 * 864e5;
     return state.listings.filter((l) => {
-      if (HIDDEN.has(l.status)) return false;
+      if (HIDDEN.has(l.status) || l.archived) return false;
       const v = viewing(l.id); if (v && ["requested", "scheduled", "viewed", "dropped"].includes(v.stage)) return false;
       if (v && v.stage === "selected") return true;
       return state.votes.some((x) => x.listing_id === l.id && x.vote === "yes" && new Date(x.at).getTime() >= since);
@@ -229,6 +279,7 @@
       ${sec("scheduled", "Scheduled", (v) => `Viewing on ${esc(fmtDate(v.scheduled_at))} · open to evaluate`)}
       ${sec("viewed", "Viewed", (v) => verdictLine(v.listing_id))}
       ${inPipe.length ? "" : `<div class="section-h">Pipeline</div><div class="card-block" style="color:var(--muted)">Requested, scheduled and viewed places show up here.</div>`}`;
+    attachRowSwipes($("#viewings-list"));
   }
   function verdictLine(id) {
     return CFG.people.map((p) => { const e = evalOf(id, p.id); const sc = e ? Object.values(e.scores || {}).filter((n) => typeof n === "number") : [];
@@ -325,6 +376,7 @@
           <div class="links"><a class="dark" href="${gmaps(l)}" target="_blank" rel="noopener">Google Maps</a><a href="${amaps(l)}" target="_blank" rel="noopener">Apple Maps</a></div></div>
         <div class="card-block"><h4>Your vote</h4><div class="vote-row">
           <button class="yes ${me === "yes" ? "on" : ""}" data-vote="yes">♥ Like</button><button class="no ${me === "no" ? "on" : ""}" data-vote="no">✕ Pass</button></div>
+          <button class="primary" style="margin-top:10px;background:var(--lilac);color:#2B1A66" data-superlike="${l.id}">★ Super like — request a viewing now</button>
           <div class="people-scores"><span><img src="${esc(person(other()).avatar)}" alt="">${esc(nameOf(other()))}: ${th ? (th.vote === "yes" ? "liked" : "passed") : "not yet"}</span>${isMatch(l) ? `<span class="pill fit">♥ Match</span>` : ""}</div></div>
         <div class="card-block"><h4>Viewing</h4>
           ${stage ? `<div class="stage"><span style="font-weight:700">${esc({ selected: "On the viewing list", requested: requestSent(v) ? "Requested, waiting for the agent" : "Request queued for the next email", scheduled: "Scheduled " + fmtDate(v.scheduled_at), viewed: "Viewed" }[stage])}</span><span class="steps">${STAGES.map((s, i) => `<i class="${i <= stepIdx ? "on" : ""}"></i>`).join("")}</span></div>` : `<div style="color:var(--muted);font-size:13.5px;margin-bottom:8px">Not on the viewing list. Add it and it appears in the weekly pick.</div>`}
@@ -360,6 +412,46 @@
     state.viewings[id] = row; renderAll(); if (!$("#sheet").hidden) renderSheet();
     const { error } = await sb.from("viewings").upsert(row, { onConflict: "listing_id" });
     if (error) { console.error(error); toast("Could not save"); } else toast({ selected: "Added to the viewing list", scheduled: "Viewing scheduled", dropped: "Removed", viewed: "Marked as viewed" }[stage] || "Saved");
+  }
+
+  /* ---------- Quick status change & archive (swipe-left row actions) ---------- */
+  const STATUS_OPTS = ["available", "under offer", "sold subject to conditions", "sold", "withdrawn", "rented"];
+  function openStatusMenu(id) { state.statusMenuId = id; renderStatusMenu(); $("#statusmenu").hidden = false; }
+  function renderStatusMenu() {
+    const l = byId(state.statusMenuId); if (!l) return;
+    $("#statusmenu-body").innerHTML = `
+      <div class="detail-addr" style="margin:4px 0 2px">${esc(l.street || l.address || "")}</div>
+      <div class="detail-area">Current: ${esc(l.status || "available")}</div>
+      <div class="stack">${STATUS_OPTS.map((o) => `<button class="primary ${o === (l.status || "available") ? "accent" : "secondary"}" data-set-status="${o}">${o[0].toUpperCase() + o.slice(1)}</button>`).join("")}</div>`;
+  }
+  async function setListingStatus(id, status) {
+    const l = byId(id); if (!l) return; const now = new Date().toISOString();
+    l.status = status; l.updated_at = now; renderAll(); if (!$("#statusmenu").hidden) renderStatusMenu();
+    const { error } = await sb.from("listings").update({ status, updated_at: now }).eq("id", id);
+    if (error) { console.error(error); toast("Could not save status"); } else toast("Status updated");
+  }
+  async function archiveListing(id, val) {
+    const l = byId(id); if (!l) return; l.archived = val; renderAll();
+    const { error } = await sb.from("listings").update({ archived: val }).eq("id", id);
+    if (error) { console.error(error); toast("Could not save"); } else toast(val ? "Archived" : "Restored");
+  }
+
+  /* ---------- Super like: like + request a viewing immediately, skipping the weekly batch ---------- */
+  async function requestViewingNow(l) {
+    const cur = viewing(l.id);
+    if (cur && ["scheduled", "viewed"].includes(cur.stage)) return toast("Already further along in the viewing pipeline");
+    if (cur && cur.stage === "requested") return toast("Viewing already requested");
+    const id = `req-${Date.now()}`; const now = new Date().toISOString();
+    const req = { id, listing_ids: [l.id], created_by: state.me, created_at: now, availability: null, sent_at: null, sent_via: null };
+    const row = { listing_id: l.id, stage: "requested", selected_by: state.me, request_id: id, updated_at: now };
+    const r1 = await sb.from("viewing_requests").insert(req); if (r1.error) { console.error(r1.error); return toast("Could not queue the viewing request"); }
+    const r2 = await sb.from("viewings").upsert(row, { onConflict: "listing_id" }); if (r2.error) { console.error(r2.error); return toast("Saved request, but viewing failed"); }
+    state.requests.push(req); state.viewings[l.id] = row; renderAll();
+  }
+  async function superLike(l) {
+    await castVote(l, "yes");
+    await requestViewingNow(l);
+    toast("Super liked — requesting a viewing");
   }
 
   /* ---------- Evaluation ---------- */
@@ -435,7 +527,7 @@
       state.bigmap.on("click", () => ($("#peek").hidden = true)); }
     if (state.bigmap._tilesDark !== isDark()) { state.bigmap._tiles.setUrl(TILES()); state.bigmap._tilesDark = isDark(); }
     const g = state.bigmap._layer; g.clearLayers();
-    state.listings.filter((l) => l.lat && l.lng && !HIDDEN.has(l.status)).forEach((l) => {
+    state.listings.filter((l) => l.lat && l.lng && !HIDDEN.has(l.status) && !l.archived).forEach((l) => {
       const me = (voteOf(l.id, state.me) || {}).vote, th = (voteOf(l.id, other()) || {}).vote; let color = "#B8B8B2", big = false;
       if (me === "yes" && th === "yes") { color = "#D8F36A"; big = true; } else if (me === "yes") color = "#121212"; else if (th === "yes") color = "#CDBDFF"; else if (me === "no") return;
       L.marker([l.lat, l.lng], { icon: L.divIcon({ className: "", html: `<div class="pin ${big ? "big" : ""}" style="background:${color}"></div>`, iconSize: big ? [26, 26] : [18, 18], iconAnchor: big ? [13, 13] : [9, 9] }) })
@@ -645,6 +737,16 @@
 
   document.body.addEventListener("click", (e) => {
     const t = e.target;
+    const rs = t.closest("[data-row-status]"); if (rs) { closeRow(); openStatusMenu(rs.dataset.rowStatus); return; }
+    const ra = t.closest("[data-row-archive]"); if (ra) { closeRow(); archiveListing(ra.dataset.rowArchive, true); return; }
+    const ru = t.closest("[data-row-unarchive]"); if (ru) { closeRow(); archiveListing(ru.dataset.rowUnarchive, false); return; }
+    const ss = t.closest("[data-set-status]"); if (ss && state.statusMenuId) { setListingStatus(state.statusMenuId, ss.dataset.setStatus); $("#statusmenu").hidden = true; return; }
+    const sl = t.closest("[data-superlike]"); if (sl) { superLike(byId(sl.dataset.superlike)); return; }
+    const rw = t.closest(".row-wrap");
+    if (rw && !t.closest(".row-actions")) {
+      if (rw._suppressClick) return;
+      if (rw.classList.contains("open")) { closeRow(); return; }
+    }
     if (t.closest("#me-btn")) { openProfile(); return; }
     const tab = t.closest("[data-view]"); if (tab) { state.view = tab.dataset.view; document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b === tab));
       document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + state.view)); if (state.view === "map") renderBigMap(); if (state.view === "swipe") renderDeck(); return; }
@@ -684,6 +786,7 @@
   const topCard = () => { const c = $("#deck .card:not(.behind)"); return [c, c && byId(c.dataset.id)]; };
   $("#btn-yes").onclick = () => { const [c, l] = topCard(); if (l) fly(c, "yes", l); };
   $("#btn-no").onclick = () => { const [c, l] = topCard(); if (l) fly(c, "no", l); };
+  $("#btn-super").onclick = () => { const [c, l] = topCard(); if (l) flySuper(c, l); };
   $("#btn-info").onclick = () => { const [, l] = topCard(); if (l) openSheet(l.id); };
   $("#btn-undo").onclick = undo;
   document.addEventListener("keydown", (e) => { if (e.target.matches("input,textarea")) return; if (!$("#sheet").hidden || !$("#eval").hidden || !$("#weekly").hidden || !$("#profile").hidden || !$("#prefs").hidden) { if (e.key === "Escape") { ["sheet", "eval", "weekly", "profile", "prefs", "lightbox"].forEach((id) => ($("#" + id).hidden = true)); } return; }
