@@ -29,21 +29,81 @@
 
   function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => (t.hidden = true), 2200); }
 
-  /* Tracks writes still in flight to Supabase, keyed by a caller-chosen id. Two problems this
-     solves: (1) load() re-pulls from the server every 30s / on focus / on visibility change to
-     pick up the other person's swipes — if it lands before an in-flight write commits, it would
-     silently overwrite the optimistic local change with stale server data; reapplyPending() re-
-     patches every still-pending change on top of each fresh pull. (2) actions like Clear cache
-     navigate away immediately, which cancels any request still in flight — clearCache() awaits
-     these before it does that. */
-  const pendingWrites = new Map();   // key -> { promise, apply() }
-  function trackWrite(key, run, apply) {
-    const p = run();
-    pendingWrites.set(key, { promise: p, apply });
+  /* Durable write outbox, keyed by a caller-chosen id. "Closing the app" on a phone does not fire
+     beforeunload — the OS can just suspend or kill the page mid-request — so a write that is only
+     tracked in memory (the old pendingWrites-only design) can vanish silently: the swipe looked
+     accepted, the server never got it, and it reappears in the queue next time the app opens.
+     Every write is persisted to localStorage the instant it is made, before the network call, and
+     only cleared once the server confirms it. load() replays whatever is still outstanding on top
+     of every fresh pull — both this session's in-flight writes (reapplyPending, e.g. load() racing
+     an in-flight write) and any left over from a session that never got to finish (flushOutbox,
+     e.g. the app was killed mid-write) — so a swipe never quietly reverts, and is retried until it
+     actually lands. */
+  const OUTBOX_KEY = "pandOutbox_v1";
+  function loadOutbox() { try { return JSON.parse(localStorage.getItem(OUTBOX_KEY)) || {}; } catch (e) { return {}; } }
+  function saveOutbox(ob) { try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(ob)); } catch (e) {} }
+  function outboxPut(key, kind, payload) { const ob = loadOutbox(); ob[key] = { kind, payload }; saveOutbox(ob); }
+  function outboxDrop(key) { const ob = loadOutbox(); if (key in ob) { delete ob[key]; saveOutbox(ob); } }
+
+  const WRITE_KINDS = {
+    vote: {
+      exec: (row) => sb.from("votes").upsert(row, { onConflict: "listing_id,who" }),
+      apply: (row) => { const i = state.votes.findIndex((v) => v.listing_id === row.listing_id && v.who === row.who); if (i >= 0) state.votes[i] = row; else state.votes.push(row); },
+    },
+    voteDelete: {
+      exec: (row) => sb.from("votes").delete().match({ listing_id: row.listing_id, who: row.who }),
+      apply: (row) => { state.votes = state.votes.filter((v) => !(v.listing_id === row.listing_id && v.who === row.who)); },
+    },
+    viewing: {
+      exec: (row) => sb.from("viewings").upsert(row, { onConflict: "listing_id" }),
+      apply: (row) => { state.viewings[row.listing_id] = row; },
+    },
+    viewingRequestNow: {
+      exec: async (p) => { const r1 = await sb.from("viewing_requests").insert(p.req); if (r1.error) return r1; return sb.from("viewings").upsert(p.row, { onConflict: "listing_id" }); },
+      apply: (p) => { state.viewings[p.row.listing_id] = p.row; },
+    },
+    listingStatus: {
+      exec: (p) => sb.from("listings").update({ status: p.status, updated_at: p.updated_at }).eq("id", p.id),
+      apply: (p) => { const l = byId(p.id); if (l) { l.status = p.status; l.updated_at = p.updated_at; } },
+    },
+    listingArchived: {
+      exec: (p) => sb.from("listings").update({ archived: p.archived }).eq("id", p.id),
+      apply: (p) => { const l = byId(p.id); if (l) l.archived = p.archived; },
+    },
+  };
+
+  const pendingWrites = new Map();   // key -> { promise, apply() } — writes still in flight *this session*
+  async function attemptWrite(key, kind, payload, onSettled) {
+    let { error } = await WRITE_KINDS[kind].exec(payload);
+    if (error) {
+      console.error(error);
+      await new Promise((r) => setTimeout(r, 2000));
+      ({ error } = await WRITE_KINDS[kind].exec(payload));
+      if (error) console.error(error);
+    }
+    if (!error) outboxDrop(key);   // still in the outbox otherwise, so the next flush retries it
+    if (onSettled) onSettled(error);
+    return { error };
+  }
+  function trackWrite(key, kind, payload, onSettled) {
+    outboxPut(key, kind, payload);
+    const p = attemptWrite(key, kind, payload, onSettled);
+    pendingWrites.set(key, { promise: p, apply: () => WRITE_KINDS[kind].apply(payload) });
     p.finally(() => { const cur = pendingWrites.get(key); if (cur && cur.promise === p) pendingWrites.delete(key); });
     return p;
   }
   function reapplyPending() { pendingWrites.forEach(({ apply }) => apply()); }
+  function flushOutbox() {
+    const ob = loadOutbox();
+    Object.keys(ob).forEach((key) => {
+      if (pendingWrites.has(key)) return;   // already retrying this session
+      const { kind, payload } = ob[key];
+      WRITE_KINDS[kind].apply(payload);   // keep it out of the swipe queue even before the retry lands
+      const p = attemptWrite(key, kind, payload);
+      pendingWrites.set(key, { promise: p, apply: () => WRITE_KINDS[kind].apply(payload) });
+      p.finally(() => { const cur = pendingWrites.get(key); if (cur && cur.promise === p) pendingWrites.delete(key); });
+    });
+  }
   window.addEventListener("beforeunload", (e) => { if (pendingWrites.size) { e.preventDefault(); e.returnValue = ""; } });
   function voteOf(id, who) { return state.votes.find((v) => v.listing_id === id && v.who === who); }
   function isMatch(l) { return CFG.people.every((p) => (voteOf(l.id, p.id) || {}).vote === "yes"); }
@@ -183,28 +243,22 @@
   }
   function castVote(l, vote) {
     const row = { listing_id: l.id, who: state.me, vote, at: new Date().toISOString() };
-    const prev = state.votes.findIndex((v) => v.listing_id === l.id && v.who === state.me);
-    if (prev >= 0) state.votes[prev] = row; else state.votes.push(row);
+    WRITE_KINDS.vote.apply(row);
     state.lastVote = { listing: l, vote }; recomputeProfile(); renderAll();
     const key = "vote:" + row.listing_id + ":" + row.who;
-    return trackWrite(key, async () => {
-      let { error } = await sb.from("votes").upsert(row, { onConflict: "listing_id,who" });
-      if (error) {
-        toast("Could not save, retrying"); console.error(error);
-        await new Promise((r) => setTimeout(r, 2000));
-        ({ error } = await sb.from("votes").upsert(row, { onConflict: "listing_id,who" }));
-        if (error) console.error(error);
-      }
+    return trackWrite(key, "vote", row, (error) => {
       if (error) toast("Vote not saved — check your connection");
       else if (vote === "yes" && isMatch(l)) toast(`It's a match with ${nameOf(other())}`);
-    }, () => { const i = state.votes.findIndex((v) => v.listing_id === row.listing_id && v.who === row.who); if (i >= 0) state.votes[i] = row; else state.votes.push(row); });
+    });
   }
   async function undo() {
     if (!state.lastVote) return toast("Nothing to undo");
     const { listing } = state.lastVote;
     const pend = pendingWrites.get("vote:" + listing.id + ":" + state.me); if (pend) await pend.promise.catch(() => {});
-    state.votes = state.votes.filter((v) => !(v.listing_id === listing.id && v.who === state.me)); state.lastVote = null; recomputeProfile(); renderAll();
-    const { error } = await sb.from("votes").delete().match({ listing_id: listing.id, who: state.me }); if (error) toast("Undo failed");
+    const row = { listing_id: listing.id, who: state.me };
+    WRITE_KINDS.voteDelete.apply(row);
+    state.lastVote = null; recomputeProfile(); renderAll();
+    trackWrite("voteDelete:" + row.listing_id + ":" + row.who, "voteDelete", row, (error) => { if (error) toast("Undo failed"); });
   }
   function recomputeProfile() {
     const liked = state.listings.filter((l) => state.votes.some((v) => v.listing_id === l.id && v.vote === "yes"));
@@ -436,11 +490,10 @@
     const row = { listing_id: id, stage, selected_by: prev.selected_by || state.me, request_id: prev.request_id || null, scheduled_at: prev.scheduled_at || null, notes: prev.notes || null, updated_at: now };
     if (stage === "scheduled") { const val = ($("#sched") || {}).value; if (!val) return toast("Pick a date first"); row.scheduled_at = new Date(val).toISOString(); }
     if (stage === "selected") row.selected_at = now;
-    state.viewings[id] = row; renderAll(); if (!$("#sheet").hidden) renderSheet();
-    return trackWrite("viewing:" + id, async () => {
-      const { error } = await sb.from("viewings").upsert(row, { onConflict: "listing_id" });
-      if (error) { console.error(error); toast("Could not save"); } else toast({ selected: "Added to the viewing list", scheduled: "Viewing scheduled", dropped: "Removed", viewed: "Marked as viewed" }[stage] || "Saved");
-    }, () => { state.viewings[id] = row; });
+    WRITE_KINDS.viewing.apply(row); renderAll(); if (!$("#sheet").hidden) renderSheet();
+    return trackWrite("viewing:" + id, "viewing", row, (error) => {
+      toast(error ? "Could not save" : ({ selected: "Added to the viewing list", scheduled: "Viewing scheduled", dropped: "Removed", viewed: "Marked as viewed" }[stage] || "Saved"));
+    });
   }
 
   /* ---------- Quick status change & archive (swipe-left row actions) ---------- */
@@ -455,18 +508,15 @@
   }
   function setListingStatus(id, status) {
     const l = byId(id); if (!l) return; const now = new Date().toISOString();
-    l.status = status; l.updated_at = now; renderAll(); if (!$("#statusmenu").hidden) renderStatusMenu();
-    return trackWrite("listing:" + id + ":status", async () => {
-      const { error } = await sb.from("listings").update({ status, updated_at: now }).eq("id", id);
-      if (error) { console.error(error); toast("Could not save status"); } else toast("Status updated");
-    }, () => { const ll = byId(id); if (ll) { ll.status = status; ll.updated_at = now; } });
+    const payload = { id, status, updated_at: now };
+    WRITE_KINDS.listingStatus.apply(payload); renderAll(); if (!$("#statusmenu").hidden) renderStatusMenu();
+    return trackWrite("listing:" + id + ":status", "listingStatus", payload, (error) => toast(error ? "Could not save status" : "Status updated"));
   }
   function archiveListing(id, val) {
-    const l = byId(id); if (!l) return; l.archived = val; renderAll();
-    return trackWrite("listing:" + id + ":archived", async () => {
-      const { error } = await sb.from("listings").update({ archived: val }).eq("id", id);
-      if (error) { console.error(error); toast("Could not save"); } else toast(val ? "Archived" : "Restored");
-    }, () => { const ll = byId(id); if (ll) ll.archived = val; });
+    const l = byId(id); if (!l) return;
+    const payload = { id, archived: val };
+    WRITE_KINDS.listingArchived.apply(payload); renderAll();
+    return trackWrite("listing:" + id + ":archived", "listingArchived", payload, (error) => toast(error ? "Could not save" : (val ? "Archived" : "Restored")));
   }
 
   /* ---------- Super like: like + request a viewing immediately, skipping the weekly batch ---------- */
@@ -475,14 +525,12 @@
     if (cur && ["scheduled", "viewed"].includes(cur.stage)) return toast("Already further along in the viewing pipeline");
     if (cur && cur.stage === "requested") return toast("Viewing already requested");
     const id = `req-${Date.now()}`; const now = new Date().toISOString();
-    const req = { id, listing_ids: [l.id], created_by: state.me, created_at: now, availability: null, sent_at: null, sent_via: null };
-    const row = { listing_id: l.id, stage: "requested", selected_by: state.me, request_id: id, updated_at: now };
-    state.viewings[l.id] = row; renderAll();
-    return trackWrite("viewing:" + l.id, async () => {
-      const r1 = await sb.from("viewing_requests").insert(req); if (r1.error) { console.error(r1.error); toast("Could not queue the viewing request"); return; }
-      const r2 = await sb.from("viewings").upsert(row, { onConflict: "listing_id" }); if (r2.error) { console.error(r2.error); toast("Saved request, but viewing failed"); return; }
-      state.requests.push(req);
-    }, () => { state.viewings[l.id] = row; });
+    const payload = { req: { id, listing_ids: [l.id], created_by: state.me, created_at: now, availability: null, sent_at: null, sent_via: null },
+                       row: { listing_id: l.id, stage: "requested", selected_by: state.me, request_id: id, updated_at: now } };
+    WRITE_KINDS.viewingRequestNow.apply(payload); renderAll();
+    return trackWrite("viewing:" + l.id, "viewingRequestNow", payload, (error) => {
+      if (error) toast("Could not queue the viewing request"); else state.requests.push(payload.req);
+    });
   }
   async function superLike(l) {
     await castVote(l, "yes");
@@ -771,7 +819,8 @@
     state.photos = {}; (ph.data || []).forEach((p) => (state.photos[p.listing_id] = state.photos[p.listing_id] || []).push(p));
     state.requests = rq.data || [];
     if (pf && pf.data && pf.data.data) state.prefs = pf.data.data;
-    reapplyPending();   // don't let a fresh-but-stale pull clobber a swipe/change still in flight
+    flushOutbox();      // resume anything that never made it to the server last time, before it can reappear in the queue
+    reapplyPending();   // don't let a fresh-but-stale pull clobber a swipe/change still in flight this session
     recomputeProfile(); renderAll(); maybeSaturday();
   }
   function maybeSaturday() {
