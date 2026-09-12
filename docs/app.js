@@ -709,9 +709,13 @@
   const PRIOS = [["location", "Neighbourhood"], ["outdoor", "Outdoor space"], ["size", "Size"], ["price", "Price"], ["energy", "Energy label"], ["ownership", "Freehold / paid-off lease"]];
   function allAreas() { const seen = [...new Set(Object.values(window.AREAS || {}))]; const groups = {}; seen.forEach((a) => { const d = a.split(/ \(|\//)[0].trim(); (groups[d] = groups[d] || []).push(a); }); return groups; }
   async function openPrefs() {
-    const cur = await sb.from("app_events").select("data").eq("key", "couple_prefs").maybeSingle();   // always start from the latest shared answers
-    if (cur.data && cur.data.data) state.prefs = cur.data.data;
+    // Open immediately with whatever we already have locally — never block the button on the
+    // network, so a slow or dropped connection can't make it look like tapping it did nothing.
     renderPrefs(); $("#prefs").hidden = false;
+    try {
+      const cur = await sb.from("app_events").select("data").eq("key", "couple_prefs").maybeSingle();   // then refresh to the latest shared answers
+      if (cur.data && cur.data.data && !$("#prefs").hidden) { state.prefs = { ...cur.data.data, ...prefsPending }; renderPrefs(); }
+    } catch (e) { console.error(e); }
   }
   function renderPrefs() {
     const q = state.prefs || {}; const opt = (key, vals) => `<div class="opts">${vals.map(([v, lab]) => `<button data-pref-key="${key}" data-pref-val="${v}" class="${String(q[key] == null ? (key === "max_km" ? "5" : "any") : q[key]) === v ? "on" : ""}">${lab}</button>`).join("")}</div>`;
@@ -744,20 +748,44 @@
     $("#r-m2").addEventListener("input", (e) => { $("#v-m2").textContent = +e.target.value <= 40 ? "any" : e.target.value + " m²"; });
     $("#r-m2").addEventListener("change", (e) => savePrefs({ min_m2: +e.target.value <= 40 ? null : +e.target.value }));
   }
-  let prefsTimer = null, prefsPending = {};
+  /* Preferences are one shared row both phones edit, so a plain in-memory pending patch (the old
+     design) could vanish exactly like the swipe bug: closing the app before the debounced save
+     landed, or a network hiccup during it, silently dropped the change with only a small "Not
+     saved" label as any sign — easy to miss mid-questionnaire. Every edit is persisted to
+     localStorage the instant it happens and only cleared once the merge+upsert actually lands;
+     load() retries anything still outstanding from a session that never got to finish. */
+  const PREFS_OUTBOX_KEY = "prefsOutbox_v1";
+  function loadPrefsOutbox() { try { return JSON.parse(localStorage.getItem(PREFS_OUTBOX_KEY)) || {}; } catch (e) { return {}; } }
+  function savePrefsOutbox(p) { try { Object.keys(p).length ? localStorage.setItem(PREFS_OUTBOX_KEY, JSON.stringify(p)) : localStorage.removeItem(PREFS_OUTBOX_KEY); } catch (e) {} }
+  let prefsTimer = null, prefsPending = loadPrefsOutbox(), prefsFlushing = false;
   function savePrefs(patch) {
-    prefsPending = { ...prefsPending, ...patch };
+    prefsPending = { ...prefsPending, ...patch }; savePrefsOutbox(prefsPending);
     state.prefs = { ...(state.prefs || {}), ...patch }; const top = $("#prefs-body").scrollTop; renderPrefs(); $("#prefs-body").scrollTop = top; $("#prefs-saved").textContent = "Saving…";
-    clearTimeout(prefsTimer); prefsTimer = setTimeout(async () => {
-      // Merge onto the latest shared answers first, so one phone never wipes what the other phone saved.
-      const cur = await sb.from("app_events").select("data").eq("key", "couple_prefs").maybeSingle();
-      const base = (cur.data && cur.data.data) || {};
-      const merged = Object.keys(prefsPending).length && !("__reset" in prefsPending) ? { ...base, ...prefsPending } : { ...prefsPending };
-      delete merged.__reset; merged.updated_by = state.me; merged.updated_at = new Date().toISOString(); prefsPending = {};
-      const { error } = await sb.from("app_events").upsert({ key: "couple_prefs", at: merged.updated_at, data: merged }, { onConflict: "key" });
-      if (!error) state.prefs = merged;
-      $("#prefs-saved").textContent = error ? "Not saved" : "Saved"; if (error) console.error(error); renderAll(); if (!$("#prefs").hidden) { const t2 = $("#prefs-body").scrollTop; renderPrefs(); $("#prefs-body").scrollTop = t2; }
-    }, 400);
+    clearTimeout(prefsTimer); prefsTimer = setTimeout(flushPrefs, 400);
+  }
+  async function flushPrefs() {
+    if (prefsFlushing || !Object.keys(prefsPending).length) return;
+    prefsFlushing = true; const patch = prefsPending;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        // Merge onto the latest shared answers first, so one phone never wipes what the other phone saved.
+        const cur = await sb.from("app_events").select("data").eq("key", "couple_prefs").maybeSingle();
+        const base = (cur.data && cur.data.data) || {};
+        const merged = Object.keys(patch).length && !("__reset" in patch) ? { ...base, ...patch } : { ...patch };
+        delete merged.__reset; merged.updated_by = state.me; merged.updated_at = new Date().toISOString();
+        const { error } = await sb.from("app_events").upsert({ key: "couple_prefs", at: merged.updated_at, data: merged }, { onConflict: "key" });
+        if (!error) {
+          state.prefs = merged;
+          if (prefsPending === patch) { prefsPending = {}; savePrefsOutbox(prefsPending); }   // don't drop edits made during this round trip
+          $("#prefs-saved").textContent = "Saved"; renderAll(); if (!$("#prefs").hidden) { const t2 = $("#prefs-body").scrollTop; renderPrefs(); $("#prefs-body").scrollTop = t2; }
+          prefsFlushing = false; return;
+        }
+        console.error(error);
+      } catch (e) { console.error(e); }
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
+    }
+    prefsFlushing = false;
+    $("#prefs-saved").textContent = "Not saved — will retry"; toast("Preferences not saved yet — check your connection");
   }
   function openProfile() { renderProfile(); $("#profile").hidden = false; }
   function renderProfile() {
@@ -818,7 +846,8 @@
     state.evals = {}; (ev.data || []).forEach((e) => (state.evals[e.listing_id + ":" + e.who] = e));
     state.photos = {}; (ph.data || []).forEach((p) => (state.photos[p.listing_id] = state.photos[p.listing_id] || []).push(p));
     state.requests = rq.data || [];
-    if (pf && pf.data && pf.data.data) state.prefs = pf.data.data;
+    if (pf && pf.data && pf.data.data) state.prefs = { ...pf.data.data, ...prefsPending };
+    if (Object.keys(prefsPending).length) flushPrefs();   // resume a preferences edit that never made it to the server last time
     flushOutbox();      // resume anything that never made it to the server last time, before it can reappear in the queue
     reapplyPending();   // don't let a fresh-but-stale pull clobber a swipe/change still in flight this session
     recomputeProfile(); renderAll(); maybeSaturday();
