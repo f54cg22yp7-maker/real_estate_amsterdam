@@ -176,7 +176,7 @@
         </div>
       </div>
       <div class="body">
-        <div class="hint"><span>Swipe right to like, left to pass, up to super like · scroll for more · tap for the full profile</span></div>
+        <div class="hint"><span>Swipe right to like, left to pass · scroll for more · tap for the full profile</span></div>
         <div class="chips">${chipsHtml(l)}</div>
         <div class="minimap" id="mm-${l.id}"></div>
         ${kvHtml(l)}
@@ -205,28 +205,23 @@
     });
   }
   function attachDrag(card, l) {
-    let sx = 0, sy = 0, dx = 0, dy = 0, dragging = false, decided = null, t0 = 0, target = null;
-    const yes = card.querySelector(".stamp.yes"), no = card.querySelector(".stamp.no"), sup = card.querySelector(".stamp.super");
-    const onDown = (e) => { if (e.target.closest("button,a,.leaflet-container,.slides")) return; const p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY; dx = dy = 0; dragging = true; decided = null; t0 = Date.now(); target = e.target; card.style.transition = "none"; };
+    // Only horizontal drags (like/pass) are gestures here. Super like is deliberately button-only
+    // (see #btn-super / [data-superlike]) — it fires a real, immediate viewing request, so it
+    // should never trigger from an accidental upward swipe.
+    let sx = 0, sy = 0, dx = 0, dy = 0, dragging = false, t0 = 0, target = null;
+    const yes = card.querySelector(".stamp.yes"), no = card.querySelector(".stamp.no");
+    const onDown = (e) => { if (e.target.closest("button,a,.leaflet-container,.slides")) return; const p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY; dx = dy = 0; dragging = true; t0 = Date.now(); target = e.target; card.style.transition = "none"; };
     const onMove = (e) => {
       if (!dragging) return; const p = e.touches ? e.touches[0] : e; dx = p.clientX - sx; dy = p.clientY - sy;
-      if (decided === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) decided = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
-      if (decided === "h") {
-        if (e.cancelable) e.preventDefault();
-        card.style.transform = `translate(${dx}px, ${dy * 0.2}px) rotate(${dx / 18}deg)`;
-        yes.style.opacity = Math.min(1, Math.max(0, dx / 90)); no.style.opacity = Math.min(1, Math.max(0, -dx / 90));
-      } else if (decided === "v" && dy < -8) {
-        if (e.cancelable) e.preventDefault();
-        card.style.transform = `translate(0, ${Math.max(dy, -160)}px)`;
-        if (sup) sup.style.opacity = Math.min(1, Math.max(0, -dy / 90));
-      }
+      if (e.cancelable) e.preventDefault();
+      card.style.transform = `translate(${dx}px, ${dy * 0.2}px) rotate(${dx / 18}deg)`;
+      yes.style.opacity = Math.min(1, Math.max(0, dx / 90)); no.style.opacity = Math.min(1, Math.max(0, -dx / 90));
     };
     const onUp = () => {
       if (!dragging) return; dragging = false;
-      if (decided === "h" && Math.abs(dx) > 100) return fly(card, dx > 0 ? "yes" : "no", l);
-      if (decided === "v" && dy < -110) return flySuper(card, l);
-      card.style.transition = "transform .25s"; card.style.transform = ""; yes.style.opacity = no.style.opacity = 0; if (sup) sup.style.opacity = 0;
-      if (decided === null && Date.now() - t0 < 400 && target && target.closest(".body")) openSheet(l.id);   // a tap
+      if (Math.abs(dx) > 100) return fly(card, dx > 0 ? "yes" : "no", l);
+      card.style.transition = "transform .25s"; card.style.transform = ""; yes.style.opacity = no.style.opacity = 0;
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8 && Date.now() - t0 < 400 && target && target.closest(".body")) openSheet(l.id);   // a tap
     };
     card.addEventListener("touchstart", onDown, { passive: true }); card.addEventListener("touchmove", onMove, { passive: false }); card.addEventListener("touchend", onUp);
     card.addEventListener("mousedown", onDown); window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
