@@ -268,11 +268,17 @@
     const map = { selected: ["lilac", "On the viewing list"], requested: ["peach", requestSent(v) ? "Viewing requested" : "Request pending"], scheduled: ["ink", "Viewing " + fmtDate(v.scheduled_at)], viewed: ["good", "Viewed"] };
     const [cls, txt] = map[v.stage] || ["", v.stage]; return `<span class="pill ${cls}">${esc(txt)}</span>`;
   }
-  function rowHtml(l, note, cls) {
+  function rowHtml(l, note, cls, viewingCtx) {
     const f = fit(l);
-    const archiveBtn = l.archived ? `<button class="ract restore" data-row-unarchive="${l.id}">Restore</button>` : `<button class="ract archive" data-row-archive="${l.id}">Archive</button>`;
+    let actions;
+    if (viewingCtx) {
+      actions = `<button class="ract status" data-row-stage="${l.id}">Stage</button><button class="ract archive" data-row-drop="${l.id}">Remove</button>`;
+    } else {
+      const archiveBtn = l.archived ? `<button class="ract restore" data-row-unarchive="${l.id}">Restore</button>` : `<button class="ract archive" data-row-archive="${l.id}">Archive</button>`;
+      actions = `<button class="ract status" data-row-status="${l.id}">Status</button>${archiveBtn}`;
+    }
     return `<div class="row-wrap" data-wrap="${l.id}">
-      <div class="row-actions"><button class="ract status" data-row-status="${l.id}">Status</button>${archiveBtn}</div>
+      <div class="row-actions">${actions}</div>
       <button class="row" data-open="${l.id}">
         <div class="thumb" style="background-image:url('${esc(l.photo || "")}')"></div>
         <div class="info"><div class="t1"><span>${esc(l.street || "")}</span><span>${eur(l.price)}</span></div>
@@ -345,7 +351,7 @@
     const inPipe = Object.values(state.viewings).filter((v) => v.stage !== "dropped" && v.stage !== "selected" && byId(v.listing_id));
     $("#n-viewings").textContent = cands.length || "";
     const sec = (stage, title, note) => { const rows = inPipe.filter((v) => v.stage === stage).sort((a, b) => (a.scheduled_at || "").localeCompare(b.scheduled_at || ""));
-      return rows.length ? `<div class="section-h">${title}</div>` + rows.map((v) => rowHtml(byId(v.listing_id), note(v), "wait")).join("") : ""; };
+      return rows.length ? `<div class="section-h">${title}</div>` + rows.map((v) => rowHtml(byId(v.listing_id), note(v), "wait", true)).join("") : ""; };
     const nm = cands.filter(isMatch).length;
     $("#viewings-list").innerHTML = `
       <div class="weekly-card"><h3>Weekly pick</h3>
@@ -483,7 +489,11 @@
   function setStage(id, stage) {
     const now = new Date().toISOString(); const prev = viewing(id) || {};
     const row = { listing_id: id, stage, selected_by: prev.selected_by || state.me, request_id: prev.request_id || null, scheduled_at: prev.scheduled_at || null, notes: prev.notes || null, updated_at: now };
-    if (stage === "scheduled") { const val = ($("#sched") || {}).value; if (!val) return toast("Pick a date first"); row.scheduled_at = new Date(val).toISOString(); }
+    if (stage === "scheduled") {
+      const el = $("#sched");
+      if (el) { if (!el.value) return toast("Pick a date first"); row.scheduled_at = new Date(el.value).toISOString(); }
+      else if (!row.scheduled_at) return toast("Open the listing to pick a date");
+    }
     if (stage === "selected") row.selected_at = now;
     WRITE_KINDS.viewing.apply(row); renderAll(); if (!$("#sheet").hidden) renderSheet();
     return trackWrite("viewing:" + id, "viewing", row, (error) => {
@@ -512,6 +522,20 @@
     const payload = { id, archived: val };
     WRITE_KINDS.listingArchived.apply(payload); renderAll();
     return trackWrite("listing:" + id + ":archived", "listingArchived", payload, (error) => toast(error ? "Could not save" : (val ? "Archived" : "Restored")));
+  }
+
+  /* ---------- Quick viewing-stage change & remove (swipe-left row actions on the Viewings tab) ---------- */
+  const STAGE_OPTS = ["selected", "requested", "scheduled", "viewed"];
+  const STAGE_LABEL = { selected: "On the viewing list", requested: "Requested", scheduled: "Scheduled", viewed: "Viewed" };
+  function openStageMenu(id) { state.stageMenuId = id; renderStageMenu(); $("#stagemenu").hidden = false; }
+  function renderStageMenu() {
+    const l = byId(state.stageMenuId); if (!l) return;
+    const v = viewing(l.id); const cur = v && v.stage !== "dropped" ? v.stage : null;
+    $("#stagemenu-body").innerHTML = `
+      <div class="detail-addr" style="margin:4px 0 2px">${esc(l.street || l.address || "")}</div>
+      <div class="detail-area">Current: ${esc(cur ? STAGE_LABEL[cur] || cur : "not on the viewing list")}</div>
+      <div class="stack">${STAGE_OPTS.map((o) => `<button class="primary ${o === cur ? "accent" : "secondary"}" data-set-stage="${o}">${esc(STAGE_LABEL[o])}</button>`).join("")}
+        <button class="primary danger" data-set-stage="dropped">Remove from viewings</button></div>`;
   }
 
   /* ---------- Super like: like + request a viewing immediately, skipping the weekly batch ---------- */
@@ -858,6 +882,9 @@
     const ra = t.closest("[data-row-archive]"); if (ra) { closeRow(); archiveListing(ra.dataset.rowArchive, true); return; }
     const ru = t.closest("[data-row-unarchive]"); if (ru) { closeRow(); archiveListing(ru.dataset.rowUnarchive, false); return; }
     const ss = t.closest("[data-set-status]"); if (ss && state.statusMenuId) { setListingStatus(state.statusMenuId, ss.dataset.setStatus); $("#statusmenu").hidden = true; return; }
+    const rst = t.closest("[data-row-stage]"); if (rst) { closeRow(); openStageMenu(rst.dataset.rowStage); return; }
+    const rd = t.closest("[data-row-drop]"); if (rd) { closeRow(); setStage(rd.dataset.rowDrop, "dropped"); return; }
+    const sg = t.closest("[data-set-stage]"); if (sg && state.stageMenuId) { setStage(state.stageMenuId, sg.dataset.setStage); $("#stagemenu").hidden = true; return; }
     const sl = t.closest("[data-superlike]"); if (sl) { superLike(byId(sl.dataset.superlike)); return; }
     const rw = t.closest(".row-wrap");
     if (rw && !t.closest(".row-actions")) {
