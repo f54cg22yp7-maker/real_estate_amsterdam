@@ -139,6 +139,8 @@ h2 { letter-spacing: -.03em; }
 
 /* map tab */
 #bigmap { flex: 1; z-index: 0; }
+:root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.7); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.7); } }
 .legend { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; padding: 7px 12px; font-size: 12px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; z-index: 5; white-space: nowrap; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 .dot.match { background: var(--accent); border: 1px solid #8DA53A; } .dot.mine { background: var(--ink); } .dot.theirs { background: var(--lilac); } .dot.open { background: #B8B8B2; }

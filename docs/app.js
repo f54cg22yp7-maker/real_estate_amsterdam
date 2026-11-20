@@ -21,9 +21,21 @@
     ["heating", "Boiler / heating age asked"], ["vve", "VvE minutes and reserve fund asked"], ["sound", "Sound from neighbours / street"], ["sun", "Sun on outdoor space at this hour"],
     ["bikes", "Bike and storage situation"], ["lease", "Erfpacht canon and end date confirmed"], ["signal", "Phone signal and internet"]];
   const STAGES = ["selected", "requested", "scheduled", "viewed"];
-  const isDark = () => document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
-  const TILES = () => isDark() ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png";
-  const ATTR = "&copy; OpenStreetMap &copy; CARTO";
+  /* Keyless map tiles: the Dutch national base map first, OpenStreetMap if it fails. Dark mode is a
+     CSS filter on the tile pane (style.css), so no provider-specific dark tiles are needed. */
+  const TILE_SOURCES = [
+    { url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png", attr: "&copy; Kadaster (PDOK)" },
+    { url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", attr: "&copy; OpenStreetMap contributors" },
+  ];
+  let tileSrc = 0;
+  function addTiles(map) {
+    const src = TILE_SOURCES[tileSrc];
+    const layer = L.tileLayer(src.url, { maxZoom: 19, attribution: src.attr }).addTo(map);
+    layer.once("tileerror", () => {
+      if (TILE_SOURCES[tileSrc] === src && tileSrc < TILE_SOURCES.length - 1) tileSrc++;
+      if (TILE_SOURCES[tileSrc] !== src) { map.removeLayer(layer); addTiles(map); }
+    });
+  }
   const gmaps = (l) => `https://www.google.com/maps/search/?api=1&query=${l.lat},${l.lng}`;
   const amaps = (l) => `https://maps.apple.com/?q=${encodeURIComponent(l.address || "")}&ll=${l.lat},${l.lng}`;
   const photosOf = (l, n) => { const a = (l.photos && l.photos.length ? l.photos : [l.photo]).filter(Boolean); return n ? a.slice(0, n) : a; };
@@ -174,7 +186,7 @@
     opts = opts || {};
     const m = L.map(el, { zoomControl: !!opts.interactive, attributionControl: true, dragging: !!opts.interactive, scrollWheelZoom: !!opts.interactive,
       touchZoom: !!opts.interactive, doubleClickZoom: !!opts.interactive, tap: !!opts.interactive });
-    L.tileLayer(TILES(), { maxZoom: 19, attribution: ATTR, subdomains: "abcd" }).addTo(m);
+    addTiles(m);
     L.circle([l.lat, l.lng], { radius: opts.radius || 350, color: "#D8F36A", weight: 2, fillColor: "#D8F36A", fillOpacity: .18 }).addTo(m);
     L.marker([l.lat, l.lng], { icon: L.divIcon({ className: "", html: `<div class="arealabel">${esc(area(l).split(" / ")[0])}</div>`, iconSize: [0, 0] }), interactive: false }).addTo(m);
     L.circleMarker([l.lat, l.lng], { radius: 8, color: "#fff", weight: 2.5, fillColor: "#121212", fillOpacity: 1 }).addTo(m);
@@ -649,9 +661,8 @@
   function renderBigMap() {
     if (!window.L) return;
     if (!state.bigmap) { state.bigmap = L.map("bigmap", { zoomControl: false, attributionControl: true }).setView([52.3676, 4.9041], 12);
-      state.bigmap._tiles = L.tileLayer(TILES(), { maxZoom: 19, attribution: ATTR, subdomains: "abcd" }).addTo(state.bigmap); state.bigmap._layer = L.layerGroup().addTo(state.bigmap);
+      addTiles(state.bigmap); state.bigmap._layer = L.layerGroup().addTo(state.bigmap);
       state.bigmap.on("click", () => ($("#peek").hidden = true)); }
-    if (state.bigmap._tilesDark !== isDark()) { state.bigmap._tiles.setUrl(TILES()); state.bigmap._tilesDark = isDark(); }
     const g = state.bigmap._layer; g.clearLayers();
     state.listings.filter((l) => l.lat && l.lng && !HIDDEN.has(l.status) && !l.archived).forEach((l) => {
       const me = (voteOf(l.id, state.me) || {}).vote, th = (voteOf(l.id, other()) || {}).vote; let color = "#B8B8B2", big = false;
@@ -672,8 +683,6 @@
   function applyTheme(t) {
     state.theme = t; localStorage.setItem("theme", t);
     if (t === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
-    document.querySelectorAll(".leaflet-container").forEach((el) => { if (el._map) el._map.eachLayer((ly) => { if (ly.setUrl) ly.setUrl(TILES()); }); });
-    if (state.bigmap) state.bigmap._tilesDark = null;
   }
   function personFromEmail(email) { email = (email || "").toLowerCase(); return (CFG.people.find((p) => (p.emails || []).includes(email)) || {}).id || null; }
   async function loadProfile() {
