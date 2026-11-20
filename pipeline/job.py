@@ -282,7 +282,7 @@ def next_week_slots(today=None):
 
 def cmd_outbox():
     """Compose the viewing-request emails for unsent viewing_requests -> outbox.json (the session sends them)."""
-    reqs = sb_get("viewing_requests", {"select": "*", "sent_at": "is.null", "order": "created_at.asc"}, optional=True)
+    reqs = sb_get("viewing_requests", {"select": "*", "sent_at": "is.null", "error": "is.null", "order": "created_at.asc"}, optional=True)
     if not reqs:
         print("outbox: nothing to send"); json.dump([], open(os.path.join(ROOT, "outbox.json"), "w")); return
     ls = {l["id"]: l for l in sb_get("listings", {"select": "*"})}
