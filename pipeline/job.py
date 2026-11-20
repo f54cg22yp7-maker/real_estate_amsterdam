@@ -34,7 +34,9 @@ from pipeline.summary import summary as fallback_summary, outdoor  # noqa: E402
 
 cfg = open(os.path.join(ROOT, "docs", "config.js"), encoding="utf-8").read()
 SB_URL = re.search(r'supabaseUrl:\s*"([^"]+)"', cfg).group(1)
-SB_KEY = re.search(r'supabaseKey:\s*"([^"]+)"', cfg).group(1)
+# A service key in the environment (GitHub Actions secret) wins; the public key is the fallback
+# for as long as the tables are still open to it.
+SB_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or re.search(r'supabaseKey:\s*"([^"]+)"', cfg).group(1)
 H = {"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}", "Content-Type": "application/json"}
 FINAL = {"sold", "withdrawn", "rented"}
 COLS = ["id", "url", "status", "address", "street", "postcode", "lat", "lng", "price", "m2", "price_per_m2",
