@@ -6,6 +6,7 @@
   const $ = (s) => document.querySelector(s);
   const state = { listings: [], votes: [], viewings: {}, evals: {}, photos: {}, requests: [], me: localStorage.getItem("who") || CFG.people[0].id,
     view: "swipe", savedTab: "likes", lastVote: null, bigmap: null, profile: null, sheetId: null, evalId: null, picks: new Set(),
+    loaded: false, loadError: false, heartbeat: null, snapAt: null,
     session: null, user: null, prof: null, prefs: null, theme: localStorage.getItem("theme") || "system", weeklyTarget: +localStorage.getItem("weeklyTarget") || CFG.weeklyTarget, authEmail: "" };
   const other = () => CFG.people.find((p) => p.id !== state.me).id;
   const person = (id) => CFG.people.find((p) => p.id === id) || { id, name: id, avatar: "" };
@@ -28,6 +29,27 @@
   const photosOf = (l, n) => { const a = (l.photos && l.photos.length ? l.photos : [l.photo]).filter(Boolean); return n ? a.slice(0, n) : a; };
 
   function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => (t.hidden = true), 2200); }
+
+  /* Last good pull, kept in IndexedDB (listings with photos are too big for localStorage). The app
+     paints from it on open and keeps showing it when the database cannot be reached, so an outage
+     never looks like "All caught up". */
+  const snap = {
+    open() { return new Promise((res, rej) => { const r = indexedDB.open("pand", 1); r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+    async get() { const db = await this.open(); return new Promise((res, rej) => { const q = db.transaction("kv").objectStore("kv").get("snapshot"); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); },
+    async put(v) { const db = await this.open(); return new Promise((res, rej) => { const tx = db.transaction("kv", "readwrite"); tx.objectStore("kv").put(v, "snapshot"); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); },
+  };
+  const STALE_MS = 6 * 3600e3;   // the updater runs hourly; six silent hours means it is down
+  function ago(iso) {
+    if (!iso) return "never"; const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
+    if (m < 2) return "just now"; if (m < 60) return `${m} min ago`; if (m < 48 * 60) return `${Math.round(m / 60)} h ago`; return `${Math.round(m / 1440)} days ago`;
+  }
+  function freshLine() { return state.heartbeat ? `Listings checked ${ago(state.heartbeat)}.` : "Listings have not been checked recently."; }
+  function renderNotice() {
+    const n = $("#notice"); let msg = "";
+    if (state.loadError) msg = state.loaded ? `Can't reach the database. Showing what was saved ${ago(state.snapAt)}.` : "Can't reach the database.";
+    else if (state.loaded && (!state.heartbeat || Date.now() - new Date(state.heartbeat) > STALE_MS)) msg = `The listing updater looks down. Last check: ${ago(state.heartbeat)}.`;
+    n.hidden = !msg; n.innerHTML = msg ? `<span>${esc(msg)}</span>${state.loadError ? `<button data-retry="1">Retry</button>` : ""}` : "";
+  }
 
   /* Durable write outbox, keyed by a caller-chosen id. "Closing the app" on a phone does not fire
      beforeunload — the OS can just suspend or kill the page mid-request — so a write that is only
@@ -197,7 +219,8 @@
     const deck = $("#deck"), q = queue();
     $("#count").textContent = q.length ? `${q.length} to go` : "";
     deck.innerHTML = "";
-    if (!q.length) { deck.innerHTML = `<div class="empty"><h2>All caught up</h2><div>New places land every few hours. Check Saved and Viewings meanwhile.</div>${window.Affinity.hasPrefs(state.prefs) ? "" : `<button class="pill ink" data-prefs="1" style="border:0;padding:10px 16px;margin-top:14px">Tune the % fit</button>`}</div>`; $("#actions").style.visibility = "hidden"; return; }
+    if (!state.loaded) { deck.innerHTML = `<div class="empty"><h2>${state.loadError ? "Can't load listings" : "Loading…"}</h2><div>${state.loadError ? "The database is not answering. Tap Retry above." : ""}</div></div>`; $("#actions").style.visibility = "hidden"; return; }
+    if (!q.length) { deck.innerHTML = `<div class="empty"><h2>All caught up</h2><div>${esc(freshLine())} Check Saved and Viewings meanwhile.</div>${window.Affinity.hasPrefs(state.prefs) ? "" : `<button class="pill ink" data-prefs="1" style="border:0;padding:10px 16px;margin-top:14px">Tune the % fit</button>`}</div>`; $("#actions").style.visibility = "hidden"; return; }
     $("#actions").style.visibility = "visible";
     q.slice(0, 2).reverse().forEach((l, i, arr) => {
       const c = document.createElement("div"); c.className = "card" + (i < arr.length - 1 ? " behind" : ""); c.dataset.id = l.id; c.innerHTML = cardHtml(l); deck.appendChild(c);
@@ -832,6 +855,8 @@
       <div class="card-block" style="margin-top:10px"><h4>Data</h4>
         ${CFG.shortlistSheet ? `<div class="setting"><div class="l">Shortlist sheet</div><a href="${esc(CFG.shortlistSheet)}" target="_blank" rel="noopener">Open</a></div>` : ""}
         <div class="setting"><div class="l">Listings in Pand</div><span class="pill">${state.listings.length}</span></div>
+        <div class="setting"><div class="l">Listings last checked</div><span class="pill">${esc(ago(state.heartbeat))}</span></div>
+        <div class="setting"><div class="l">Newest listing</div><span class="pill">${esc(ago((state.listings[0] || {}).first_seen))}</span></div>
         <div class="setting"><div class="l">Version</div><span class="pill">${esc(CFG.version)}</span></div>
       </div>
       <div class="card-block" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><button class="primary" id="clear-cache" style="width:100%;box-sizing:border-box">Clear cache</button><small style="color:var(--muted);display:block;margin-top:8px">If your listings or matches look out of date, clear the browser cache and reload the page.</small></div>`;
@@ -847,6 +872,7 @@
     }
     ["who", "theme", "weeklyTarget", "guest", "weeklySeen"].forEach((k) => localStorage.removeItem(k));
     try {
+      indexedDB.deleteDatabase("pand");
       if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.map((k) => caches.delete(k))); }
       if (navigator.serviceWorker) { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map((r) => r.unregister())); }
     } catch (e) { console.warn("cache clear", e); }
@@ -858,18 +884,32 @@
 
   async function load() {
     const q = (t, sel, ord) => { let x = sb.from(t).select(sel || "*"); if (ord) x = x.order(ord, { ascending: false }); return x; };
-    const [ls, vs, vw, ev, ph, rq, pf] = await Promise.all([q("listings", "*", "first_seen"), q("votes"), q("viewings"), q("evaluations"), q("viewing_photos"), q("viewing_requests"), sb.from("app_events").select("data").eq("key", "couple_prefs").maybeSingle()]);
-    if (ls.error || vs.error) { toast("Cannot reach database"); console.error(ls.error || vs.error); return; }
-    state.listings = ls.data || []; state.votes = vs.data || [];
-    state.viewings = {}; (vw.data || []).forEach((v) => (state.viewings[v.listing_id] = v));
-    state.evals = {}; (ev.data || []).forEach((e) => (state.evals[e.listing_id + ":" + e.who] = e));
-    state.photos = {}; (ph.data || []).forEach((p) => (state.photos[p.listing_id] = state.photos[p.listing_id] || []).push(p));
-    state.requests = rq.data || [];
-    if (pf && pf.data && pf.data.data) state.prefs = { ...pf.data.data, ...prefsPending };
+    let res;
+    try { res = await Promise.all([q("listings", "*", "first_seen"), q("votes"), q("viewings"), q("evaluations"), q("viewing_photos"), q("viewing_requests"), sb.from("app_events").select("key,at,data").in("key", ["couple_prefs", "job_heartbeat"])]); }
+    catch (e) { res = [{ error: e }, {}]; }
+    const [ls, vs, vw, ev, ph, rq, ae] = res;
+    if (ls.error || vs.error) { console.error(ls.error || vs.error); state.loadError = true; renderNotice(); if (!state.loaded) renderDeck(); return; }
+    const events = {}; ((ae && ae.data) || []).forEach((r) => (events[r.key] = r));
+    const pulled = { at: new Date().toISOString(), listings: ls.data || [], votes: vs.data || [], viewings: vw.data || [], evals: ev.data || [], photos: ph.data || [],
+      requests: rq.data || [], prefs: (events.couple_prefs || {}).data || null, heartbeat: (events.job_heartbeat || {}).at || null };
+    state.loadError = false;
+    applyPull(pulled);
+    snap.put(pulled).catch((e) => console.warn("snapshot save", e));
     if (Object.keys(prefsPending).length) flushPrefs();   // resume a preferences edit that never made it to the server last time
+    maybeSaturday();
+  }
+  function applyPull(p) {
+    state.listings = p.listings; state.votes = p.votes; state.requests = p.requests; state.heartbeat = p.heartbeat; state.snapAt = p.at; state.loaded = true;
+    state.viewings = {}; p.viewings.forEach((v) => (state.viewings[v.listing_id] = v));
+    state.evals = {}; p.evals.forEach((e) => (state.evals[e.listing_id + ":" + e.who] = e));
+    state.photos = {}; p.photos.forEach((x) => (state.photos[x.listing_id] = state.photos[x.listing_id] || []).push(x));
+    if (p.prefs) state.prefs = { ...p.prefs, ...prefsPending };
     flushOutbox();      // resume anything that never made it to the server last time, before it can reappear in the queue
     reapplyPending();   // don't let a fresh-but-stale pull clobber a swipe/change still in flight this session
-    recomputeProfile(); renderAll(); maybeSaturday();
+    recomputeProfile(); renderAll(); renderNotice();
+  }
+  async function restoreSnapshot() {
+    try { const p = await snap.get(); if (p && p.listings && !state.loaded) applyPull(p); } catch (e) { console.warn("snapshot load", e); }
   }
   function maybeSaturday() {
     const day = new Date().getDay(); const wk = isoWeek(new Date());
@@ -891,6 +931,7 @@
       if (rw._suppressClick) return;
       if (rw.classList.contains("open")) { closeRow(); return; }
     }
+    if (t.closest("[data-retry]")) { load(); return; }
     if (t.closest("#me-btn")) { openProfile(); return; }
     const tab = t.closest("[data-view]"); if (tab) { state.view = tab.dataset.view; document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b === tab));
       document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + state.view)); if (state.view === "map") renderBigMap(); if (state.view === "swipe") renderDeck(); return; }
@@ -943,6 +984,7 @@
   window.addEventListener("focus", () => load());
   setInterval(() => { if (!document.hidden) load(); }, 30000);   // fallback if the realtime socket drops on the phone
   ch.subscribe((status) => { if (status === "SUBSCRIBED") console.log("realtime on"); });
-  applyTheme(state.theme); renderMe();
-  initAuth().then(load);
+  applyTheme(state.theme); renderMe(); renderDeck();
+  restoreSnapshot();   // instant paint from the last good pull, independent of the network
+  initAuth().catch((e) => console.error("auth init", e)).then(load);
 })();

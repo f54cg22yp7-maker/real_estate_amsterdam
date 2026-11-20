@@ -9,6 +9,7 @@ Subcommands (run from the repo root):
   refresh [--max N]       Re-enrich the N (default 40) least-recently-enriched non-final listings
                           so status (under offer / sold) and price stay current.
   shortlist               Write docs/shortlist.csv (all listings with votes, matches first).
+  heartbeat [source]      Stamp app_events.job_heartbeat so the app can show data freshness.
   stats                   Print counts.
 
 Config: reads docs/config.js for the Supabase URL and publishable key (no secrets involved).
@@ -155,9 +156,11 @@ def cmd_summaries(path):
 
 
 def cmd_refresh(max_n=40):
-    rows = sb_get("listings", {"select": "id,url,status,summary,enriched_at", "order": "enriched_at.asc.nullsfirst", "limit": str(max_n)})
-    rows = [r for r in rows if r.get("status") not in FINAL]
-    out, changed = [], 0
+    # Final listings are never re-enriched, so they must be excluded in the query: filtering after
+    # the limit lets them pile up at the head of the queue until nothing gets refreshed at all.
+    rows = sb_get("listings", {"select": "id,url,status,summary,enriched_at", "order": "enriched_at.asc.nullsfirst", "limit": str(max_n),
+                               "or": f'(status.is.null,status.not.in.({",".join(sorted(FINAL))}))'})
+    out, changed, failed = [], 0, []
     for r in rows:
         try:
             e = enrich(r["url"]); e["id"] = r["id"]
@@ -166,9 +169,12 @@ def cmd_refresh(max_n=40):
                 changed += 1; print("  status", r["id"], r.get("status"), "->", row.get("status"))
             out.append(row)
         except Exception as ex:
-            print("  ! refresh failed", r["id"], ex)
+            failed.append(r["id"]); print("  ! refresh failed", r["id"], ex)
     sb_upsert("listings", out)
-    print(f"refreshed {len(out)}, status changes {changed}")
+    if failed:   # rotate to the back of the queue so one dead page cannot block the rest
+        sb_patch("listings", {"id": f'in.({",".join(failed)})'}, {"enriched_at": datetime.now(timezone.utc).isoformat()})
+    print(f"refreshed {len(out)}, status changes {changed}, failed {len(failed)}")
+    return {"refreshed": len(out), "changed": changed, "failed": len(failed)}
 
 
 AGENT = {
@@ -335,6 +341,13 @@ def cmd_weekly_sent(key):
     print("weekly: logged", key)
 
 
+def cmd_heartbeat(source="manual"):
+    """Record that the job ran. The app reads this row to show how fresh the data is."""
+    now = datetime.now(timezone.utc).isoformat()
+    sb_upsert("app_events", [{"key": "job_heartbeat", "at": now, "data": {"source": source}}], on_conflict="key")
+    print("heartbeat:", now, source)
+
+
 def cmd_stats():
     ls = sb_get("listings", {"select": "id,status"}); vs = sb_get("votes", {"select": "listing_id,who,vote"})
     from collections import Counter
@@ -353,5 +366,6 @@ if __name__ == "__main__":
     elif a[0] == "outbox-sent": cmd_outbox_sent(a[1], a[2] if len(a) > 2 else "gmail")
     elif a[0] == "weekly": cmd_weekly()
     elif a[0] == "weekly-sent": cmd_weekly_sent(a[1])
+    elif a[0] == "heartbeat": cmd_heartbeat(a[1] if len(a) > 1 else "manual")
     elif a[0] == "stats": cmd_stats()
     else: print(__doc__); sys.exit(1)

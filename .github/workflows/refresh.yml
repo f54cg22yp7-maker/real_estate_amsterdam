@@ -1,0 +1,41 @@
+name: Refresh listings
+
+# Keeps listing statuses and the shortlist current without depending on a chat session.
+# Also the reason the free Supabase project never goes idle long enough to be paused.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install --quiet requests
+      - name: Refresh statuses
+        run: python3 pipeline/job.py refresh --max 40
+      - name: Regenerate shortlist
+        run: python3 pipeline/job.py shortlist
+      - name: Heartbeat
+        run: python3 pipeline/job.py heartbeat github-actions
+      - name: Publish shortlist if it changed
+        run: |
+          if ! git diff --quiet -- docs/shortlist.csv; then
+            git config user.name "pand-bot"
+            git config user.email "pand-bot@users.noreply.github.com"
+            git add docs/shortlist.csv
+            git commit -m "Update shortlist"
+            git push
+          fi
