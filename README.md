@@ -1,15 +1,17 @@
 # Amsterdam Apartment Swipe
 
 Tinder-style shortlisting for the apartment alerts Makelaarskantoor Dames van Vermeer sends via move.nl.
-Every 3 hours a scheduled job reads the alert emails from Gmail, enriches each listing from its move.nl
-landing page, and upserts it into Supabase. Davit and Luis swipe independently on their phones; a listing
+A script in the Gmail account that receives the alerts forwards them within minutes; a GitHub Actions job
+runs every 15 minutes, enriches each new listing from its move.nl landing page, upserts it into Supabase and
+keeps statuses current. Davit and Luis swipe independently on their phones; a listing
 both swipe right on is a match. Matches flow to a Google Sheet for the weekly review.
 
 ## Architecture
 
 | Layer | Choice |
 | --- | --- |
-| Ingestion | Claude Routine, every 3h, bound to the session that holds the Gmail connector (see `ROUTINE.md`) |
+| Intake | `intake/gmail_to_pand.gs` (Google Apps Script, every 5 min) posts alert emails to the `ingest-email` edge function, which queues the listing links in `intake_queue` |
+| Scheduled job | `.github/workflows/refresh.yml`, every 15 min: `job.py ingest-queue`, `refresh`, `shortlist`, `heartbeat`. The app warns when the heartbeat is older than 6 hours |
 | Parsing | `pipeline/parse_email.py` (email) and `pipeline/enrich.py` (landing page) |
 | Database | Supabase Postgres, schema in `supabase/schema.sql`, realtime on `votes` and `listings` |
 | App | "Pand": static web app in `docs/`, served by GitHub Pages, added to the iPhone home screen |

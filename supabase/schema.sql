@@ -214,3 +214,25 @@ end $$;
 -- clobbered by an upsert from pipeline/job.py. Safe to re-run.
 -- ---------------------------------------------------------------------------
 alter table public.listings add column if not exists archived boolean not null default false;
+
+-- ---------------------------------------------------------------------------
+-- v5: intake queue. The ingest-email edge function (service role) writes one row
+-- per listing link found in an alert email; the scheduled job enriches it from
+-- move.nl and marks it processed. Only the link and the email time are kept.
+-- Safe to re-run.
+-- ---------------------------------------------------------------------------
+create table if not exists public.intake_queue (
+  id           text primary key,              -- numeric move.nl ExchangeObject id
+  url          text not null,
+  email_date   timestamptz,
+  created_at   timestamptz not null default now(),
+  attempts     integer not null default 0,
+  error        text,
+  processed_at timestamptz
+);
+create index if not exists intake_queue_pending_idx on public.intake_queue (created_at) where processed_at is null;
+alter table public.intake_queue enable row level security;
+drop policy if exists intake_queue_read   on public.intake_queue;
+drop policy if exists intake_queue_update on public.intake_queue;
+create policy intake_queue_read   on public.intake_queue for select to anon, authenticated using (true);
+create policy intake_queue_update on public.intake_queue for update to anon, authenticated using (true) with check (true);

@@ -1,5 +1,9 @@
 # Scheduled job (Claude Routine, every 3 hours)
 
+> Retired on 20 November 2026. The routine is paused and replaced by `.github/workflows/refresh.yml`
+> plus the Gmail script in `intake/`. It depended on one chat session, a disposable container and
+> manual email forwards, and failed silently for weeks. Kept below for reference only.
+
 The Routine named "Amsterdam listings ingest" (cron `19 */3 * * *` UTC) wakes the long-running
 Claude session that built this project, in the "Real estate" cloud environment, and sends it the
 prompt below. It is bound to that session rather than starting a fresh one because only that

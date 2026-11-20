@@ -5,6 +5,7 @@ Subcommands (run from the repo root):
   ingest  <files...>      Email bodies (.txt) and/or JSON lists of {url|token, email_sent}.
                           Parses, dedupes against the DB, enriches new listings, upserts them,
                           and writes new_listings.json (id, address, description) for summaries.
+  ingest-queue            Same, for listings queued in intake_queue by the ingest-email function.
   summaries <json>        Apply {"<id>": "<one sentence>"} to the summary column.
   refresh [--max N]       Re-enrich the N (default 40) least-recently-enriched non-final listings
                           so status (under offer / sold) and price stay current.
@@ -116,8 +117,13 @@ def cmd_ingest(files):
                 for l in parse_email(txt):
                     cands.setdefault(l["id"], {"url": l["url"], "email_sent": l.get("email_sent")})
     print(f"candidates: {len(cands)}")
-    if not cands:
-        return
+    if cands:
+        ingest_candidates(cands)
+
+
+def ingest_candidates(cands):
+    """Enrich and upsert the candidates not yet in the database. cands: {id: {url, email_sent}}.
+    Returns the failures as [{id, url, error}]."""
     existing = {r["id"] for r in sb_get("listings", {"select": "id", "id": f'in.({",".join(cands)})'})}
     new_ids = [i for i in cands if i not in existing]
     print(f"already known: {len(existing)}, new: {len(new_ids)}")
@@ -145,6 +151,31 @@ def cmd_ingest(files):
     json.dump({"new": new_out, "failures": failures}, open(os.path.join(ROOT, "new_listings.json"), "w"), ensure_ascii=False, indent=1)
     sb_upsert("listings", rows)
     print(f"upserted {len(rows)}, failures {len(failures)} -> new_listings.json")
+    return failures
+
+
+MAX_QUEUE_ATTEMPTS = 8   # a listing can be emailed before move.nl serves its page; retry for a while
+
+
+def cmd_ingest_queue(max_n=40):
+    """Process listings the ingest-email function queued from alert emails."""
+    rows = sb_get("intake_queue", {"select": "id,url,email_date,attempts", "processed_at": "is.null",
+                                   "order": "created_at.asc", "limit": str(max_n)}, optional=True)
+    if not rows:
+        print("queue: empty"); return
+    failed = {f["id"]: f["error"] for f in ingest_candidates({r["id"]: {"url": r["url"], "email_sent": r.get("email_date")} for r in rows})}
+    now = datetime.now(timezone.utc).isoformat()
+    done = [r["id"] for r in rows if r["id"] not in failed]
+    if done:
+        sb_patch("intake_queue", {"id": f'in.({",".join(done)})'}, {"processed_at": now, "error": None})
+    for r in rows:
+        if r["id"] in failed:
+            attempts = (r.get("attempts") or 0) + 1
+            patch = {"attempts": attempts, "error": failed[r["id"]][:300]}
+            if attempts >= MAX_QUEUE_ATTEMPTS:
+                patch["processed_at"] = now
+            sb_patch("intake_queue", {"id": f'eq.{r["id"]}'}, patch)
+    print(f"queue: {len(done)} done, {len(failed)} failed")
 
 
 def cmd_summaries(path):
@@ -361,6 +392,7 @@ if __name__ == "__main__":
     a = sys.argv[1:]
     if not a: print(__doc__); sys.exit(1)
     if a[0] == "ingest": cmd_ingest(a[1:])
+    elif a[0] == "ingest-queue": cmd_ingest_queue()
     elif a[0] == "summaries": cmd_summaries(a[1])
     elif a[0] == "refresh": cmd_refresh(int(a[a.index("--max") + 1]) if "--max" in a else 40)
     elif a[0] == "shortlist": cmd_shortlist()
