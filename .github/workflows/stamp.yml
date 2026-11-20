@@ -1,0 +1,37 @@
+name: Stamp build
+
+# Gives every change to the web app a new build id, so the installed home-screen apps
+# notice it and reload themselves (see checkForUpdate in docs/app.js).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "!docs/shortlist.csv"
+      - "!docs/version.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stamp
+  cancel-in-progress: false
+
+jobs:
+  stamp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/stamp.py
+      - name: Commit the build id if it changed
+        run: |
+          if ! git diff --quiet -- docs/index.html docs/version.json || [ -n "$(git status --porcelain docs/version.json)" ]; then
+            git config user.name "pand-bot"
+            git config user.email "pand-bot@users.noreply.github.com"
+            git add docs/index.html docs/version.json
+            git commit -m "Stamp build"
+            git pull --rebase
+            git push
+          fi

@@ -866,7 +866,7 @@
         <div class="setting"><div class="l">Listings in Pand</div><span class="pill">${state.listings.length}</span></div>
         <div class="setting"><div class="l">Listings last checked</div><span class="pill">${esc(ago(state.heartbeat))}</span></div>
         <div class="setting"><div class="l">Newest listing</div><span class="pill">${esc(ago((state.listings[0] || {}).first_seen))}</span></div>
-        <div class="setting"><div class="l">Version</div><span class="pill">${esc(CFG.version)}</span></div>
+        <div class="setting"><div class="l">Version</div><span class="pill">${esc(CFG.version)} · ${esc(window.PAND_BUILD || "dev")}</span></div>
       </div>
       <div class="card-block" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><button class="primary" id="clear-cache" style="width:100%;box-sizing:border-box">Clear cache</button><small style="color:var(--muted);display:block;margin-top:8px">If your listings or matches look out of date, clear the browser cache and reload the page.</small></div>`;
   }
@@ -989,11 +989,27 @@
 
   let ch = sb.channel("live");
   ["votes", "listings", "viewings", "evaluations", "viewing_photos", "viewing_requests", "app_events"].forEach((t) => { ch = ch.on("postgres_changes", { event: "*", schema: "public", table: t }, () => { clearTimeout(load._t); load._t = setTimeout(load, 300); }); });
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+  /* A home-screen web app on iOS is resumed from memory for days and never re-navigates, so a
+     deploy would not reach it. The app compares its own build id with the deployed one whenever
+     it comes to the foreground and reloads onto the new build when nothing is in progress. */
+  async function checkForUpdate() {
+    if (!window.PAND_BUILD) return;
+    try {
+      const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" }); if (!r.ok) return;
+      const { v } = await r.json();
+      if (!v || v === window.PAND_BUILD) return;
+      const busy = pendingWrites.size || ["sheet", "eval", "weekly", "prefs", "profile", "auth", "lightbox", "statusmenu", "stagemenu"].some((id) => !$("#" + id).hidden);
+      if (busy || Date.now() - (+sessionStorage.getItem("updateTriedAt") || 0) < 120000) return;   // the CDN can lag a deploy; never loop
+      sessionStorage.setItem("updateTriedAt", String(Date.now()));
+      location.replace(location.pathname + "?v=" + v);
+    } catch (e) { /* offline: try again next time */ }
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); checkForUpdate(); } });
   window.addEventListener("focus", () => load());
-  setInterval(() => { if (!document.hidden) load(); }, 300000);   // fallback if the realtime socket drops; a full pull is ~2 MB, so keep it rare
+  setInterval(() => { if (!document.hidden) { load(); checkForUpdate(); } }, 300000);   // fallback if the realtime socket drops; a full pull is ~2 MB, so keep it rare
   ch.subscribe((status) => { if (status === "SUBSCRIBED") console.log("realtime on"); });
   applyTheme(state.theme); renderMe(); renderDeck();
   restoreSnapshot();   // instant paint from the last good pull, independent of the network
   initAuth().catch((e) => console.error("auth init", e)).then(load);
+  checkForUpdate();
 })();
