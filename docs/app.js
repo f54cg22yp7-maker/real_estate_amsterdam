@@ -925,6 +925,14 @@
     if ((day === 6 || day === 0) && weekCandidates().length && localStorage.getItem("weeklySeen") !== wk && $("#auth").hidden) { localStorage.setItem("weeklySeen", wk); openWeekly(); }
   }
 
+  /* Listing photos are served by the agent's platform. When it is down, show a clear placeholder
+     instead of a broken-image icon. Views re-render on the next pull, which retries the photo. */
+  const NO_PHOTO = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400"><rect width="600" height="400" fill="#E4E2DA"/><text x="300" y="180" text-anchor="middle" font-family="-apple-system,Helvetica,Arial,sans-serif" font-size="24" font-weight="700" fill="#6F6F6A">Photo unavailable</text><text x="300" y="212" text-anchor="middle" font-family="-apple-system,Helvetica,Arial,sans-serif" font-size="15" fill="#6F6F6A">The listing site is not serving it right now</text></svg>');
+  document.addEventListener("error", (e) => {
+    const t = e.target;
+    if (t && t.tagName === "IMG" && !t.dataset.failed && t.closest(".slides, .lb-track")) { t.dataset.failed = "1"; t.src = NO_PHOTO; }
+  }, true);
+
   document.body.addEventListener("click", (e) => {
     const t = e.target;
     const rs = t.closest("[data-row-status]"); if (rs) { closeRow(); openStatusMenu(rs.dataset.rowStatus); return; }
