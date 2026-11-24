@@ -36,6 +36,7 @@
       if (TILE_SOURCES[tileSrc] !== src) { map.removeLayer(layer); addTiles(map); }
     });
   }
+  const siteOf = (l) => { try { return new URL(l.url).hostname.replace(/^www\./, ""); } catch (e) { return "the listing site"; } };
   const gmaps = (l) => `https://www.google.com/maps/search/?api=1&query=${l.lat},${l.lng}`;
   const amaps = (l) => `https://maps.apple.com/?q=${encodeURIComponent(l.address || "")}&ll=${l.lat},${l.lng}`;
   const photosOf = (l, n) => { const a = (l.photos && l.photos.length ? l.photos : [l.photo]).filter(Boolean); return n ? a.slice(0, n) : a; };
@@ -215,7 +216,7 @@
         <div class="minimap" id="mm-${l.id}"></div>
         ${kvHtml(l)}
         <div class="summary">${esc(l.summary || (l.description_en || "").slice(0, 220) || "")}</div>
-        <div class="links"><button class="dark" data-open="${l.id}">Full profile & photos</button><a href="${esc(l.url)}" target="_blank" rel="noopener">move.nl listing</a></div>
+        <div class="links"><button class="dark" data-open="${l.id}">Full profile & photos</button><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(siteOf(l))} listing</a></div>
       </div>`;
   }
   function attachSlides(root, onTap) {
@@ -508,7 +509,7 @@
         <div class="card-block"><h4>Facts</h4>${kvHtml(l)}<div class="summary" style="margin:0">${esc(l.summary || "")}</div></div>
         ${l.description_en ? `<div class="card-block"><h4>Description</h4><div class="desc clamp" id="desc">${esc(l.description_en)}</div><button class="linkbtn" id="desc-more">Read more</button></div>` : ""}
         ${l.features && Object.keys(l.features).length ? `<div class="card-block"><h4>All features</h4><div class="kv">${Object.entries(l.features).slice(0, 40).map(([k, val]) => `<div><span>${esc(k)}</span><b>${esc(val)}</b></div>`).join("")}</div></div>` : ""}
-        <div class="links"><a class="dark" href="${esc(l.url)}" target="_blank" rel="noopener">Open on move.nl</a></div>
+        <div class="links"><a class="dark" href="${esc(l.url)}" target="_blank" rel="noopener">Open on ${esc(siteOf(l))}</a></div>
       </div>`;
     mountMap($("#sheet-map"), l, { zoom: 14, interactive: true, radius: 350 });
     const gal = $("#sheet-body .gallery"); if (gal) { gal.addEventListener("scroll", () => { $("#galcount").textContent = `${Math.round(gal.scrollLeft / gal.clientWidth) + 1} / ${photosOf(l).length}`; }, { passive: true }); attachSlides($("#sheet-body .galwrap"), (i) => openLightbox(photosOf(l), i)); }

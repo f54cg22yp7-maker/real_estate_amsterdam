@@ -192,7 +192,8 @@ def cmd_refresh(max_n=40):
     # Final listings are never re-enriched, so they must be excluded in the query: filtering after
     # the limit lets them pile up at the head of the queue until nothing gets refreshed at all.
     rows = sb_get("listings", {"select": "id,url,status,summary,enriched_at", "order": "enriched_at.asc.nullsfirst", "limit": str(max_n),
-                               "or": f'(status.is.null,status.not.in.({",".join(sorted(FINAL))}))'})
+                               "or": f'(status.is.null,status.not.in.({",".join(sorted(FINAL))}))',
+                               "url": "like.https://move.nl/*"})   # sheet-sourced listings are kept current by sheet.py
     out, changed, failed = [], 0, []
     for r in rows:
         try:
