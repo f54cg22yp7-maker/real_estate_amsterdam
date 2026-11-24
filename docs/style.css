@@ -69,10 +69,13 @@ h2 { letter-spacing: -.03em; }
 .chip.label-A, .chip.label-A\+, .chip.label-A\+\+, .chip.label-A\+\+\+ { background: var(--mint); color: #1E5B3A; } .chip.label-B { background: #E3F2B8; color: #3E5A10; }
 .chip.label-C { background: #FFF0B3; color: #6B4E12; } .chip.label-D { background: var(--peach); color: #7A3A10; }
 .chip.label-E, .chip.label-F, .chip.label-G { background: #FFC7C0; color: #7F1D1D; }
-.kv { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-bottom: 12px; font-size: 13.5px; }
-.kv div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); padding: 6px 0; }
+.kv { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 14px; margin-bottom: 12px; font-size: 13.5px; }
+.kv.one { grid-template-columns: minmax(0, 1fr); }
+.kv.one span { flex: 0 0 38%; }
+.kv div { display: flex; justify-content: space-between; gap: 8px; min-width: 0; border-bottom: 1px solid var(--line); padding: 6px 0; }
 .kv span { color: var(--muted); }
-.kv b { font-weight: 600; text-align: right; }
+.kv b { font-weight: 600; text-align: right; min-width: 0; overflow-wrap: break-word; }
+.kv b a { text-decoration: underline; text-underline-offset: 2px; }
 .kv b.good { color: var(--good); } .kv b.warn { color: var(--warn); } .kv b.bad { color: var(--bad); }
 .summary { font-size: 15px; line-height: 1.5; margin: 0 0 12px; letter-spacing: -.01em; }
 .minimap { height: 220px; border-radius: var(--r-sm); overflow: hidden; margin-bottom: 12px; background: var(--panel-2); position: relative; }
@@ -174,7 +177,8 @@ h2 { letter-spacing: -.03em; }
 .sheet-title { flex: 1; font-weight: 800; font-size: 16px; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
 .sheet-head .spacer { width: 38px; }
 .saved-hint { width: 60px; text-align: right; font-size: 12px; color: var(--muted); }
-.sheet-body { flex: 1; overflow-y: auto; padding: 4px 16px calc(var(--safe-bottom) + 28px); -webkit-overflow-scrolling: touch; }
+/* Vertical scrolling only: nothing inside a sheet may drag the page sideways. */
+.sheet-body { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; overflow-wrap: break-word; padding: 4px 16px calc(var(--safe-bottom) + 28px); -webkit-overflow-scrolling: touch; }
 .galwrap { position: relative; margin: 4px -16px 14px; }
 .gallery { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; height: 66vw; max-height: 440px; scrollbar-width: none; touch-action: pan-x; }
 .gallery::-webkit-scrollbar { display: none; }

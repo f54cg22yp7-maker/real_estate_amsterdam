@@ -37,6 +37,13 @@
     });
   }
   const siteOf = (l) => { try { return new URL(l.url).hostname.replace(/^www\./, ""); } catch (e) { return "the listing site"; } };
+  /* A feature value that holds web addresses becomes short tappable site names, one per site. */
+  const linkify = (v) => {
+    const urls = String(v == null ? "" : v).match(/https?:\/\/[^\s|]+/g); if (!urls) return esc(v);
+    const bySite = new Map();
+    urls.forEach((u) => { try { const h = new URL(u).hostname.replace(/^www\./, ""); if (!bySite.has(h) || u.length > bySite.get(h).length) bySite.set(h, u); } catch (e) { /* cut-off address */ } });
+    return [...bySite].map(([h, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(h)}</a>`).join(" · ");
+  };
   const gmaps = (l) => `https://www.google.com/maps/search/?api=1&query=${l.lat},${l.lng}`;
   const amaps = (l) => `https://maps.apple.com/?q=${encodeURIComponent(l.address || "")}&ll=${l.lat},${l.lng}`;
   const photosOf = (l, n) => { const a = (l.photos && l.photos.length ? l.photos : [l.photo]).filter(Boolean); return n ? a.slice(0, n) : a; };
@@ -508,7 +515,7 @@
         </div>
         <div class="card-block"><h4>Facts</h4>${kvHtml(l)}<div class="summary" style="margin:0">${esc(l.summary || "")}</div></div>
         ${l.description_en ? `<div class="card-block"><h4>Description</h4><div class="desc clamp" id="desc">${esc(l.description_en)}</div><button class="linkbtn" id="desc-more">Read more</button></div>` : ""}
-        ${l.features && Object.keys(l.features).length ? `<div class="card-block"><h4>All features</h4><div class="kv">${Object.entries(l.features).slice(0, 40).map(([k, val]) => `<div><span>${esc(k)}</span><b>${esc(val)}</b></div>`).join("")}</div></div>` : ""}
+        ${l.features && Object.keys(l.features).length ? `<div class="card-block"><h4>All features</h4><div class="kv one">${Object.entries(l.features).slice(0, 40).map(([k, val]) => `<div><span>${esc(k)}</span><b>${linkify(val)}</b></div>`).join("")}</div></div>` : ""}
         <div class="links"><a class="dark" href="${esc(l.url)}" target="_blank" rel="noopener">Open on ${esc(siteOf(l))}</a></div>
       </div>`;
     mountMap($("#sheet-map"), l, { zoom: 14, interactive: true, radius: 350 });

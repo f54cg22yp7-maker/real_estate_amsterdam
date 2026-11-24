@@ -217,6 +217,12 @@ def photos_for(urls):
     return [fallback] if fallback else []
 
 
+def other_links(row):
+    """Whole addresses only (a cut-off one is a dead link), a handful at most."""
+    urls = [u.strip() for u in row.get("Other URLs", "").split("|") if u.strip().startswith("http")]
+    return " | ".join(urls[:6]) or None
+
+
 def to_listing(row, key):
     import hashlib
     from datetime import datetime, timezone
@@ -263,7 +269,7 @@ def to_listing(row, key):
             "Ownership as listed": clean(row.get("Ownership"), 160), "Outdoor as listed": clean(row.get("Outdoor space"), 200),
             "Listed since": clean(row.get("Listed since")), "Agent": clean(row.get("Agent")),
             "Source": urlparse(row.get("Listing URL", "")).netloc.replace("www.", "") or None,
-            "Other links": clean(row.get("Other URLs"), 400),
+            "Other links": other_links(row),
         }.items() if v},
         "listed_since": parse_date(row.get("Listed since")),
         # Newest day first in the deck; within a day, the higher sheet score first.
@@ -283,6 +289,7 @@ def ingest(min_fit=1, max_new=250, dry=False):
     from pipeline.job import sb_get, sb_patch, sb_upsert
     rows = fetch_dicts()
     pand = sb_get("listings", {"select": "id,street,status,price"})
+    feats = {l["id"]: l.get("features") or {} for l in sb_get("listings", {"select": "id,features", "id": "like.s*"})}
     by_key = {addr_key(l["street"]): l for l in pand}
     sheet_keys, new, back, repriced, low = set(), [], 0, 0, 0
     for row in rows:
@@ -300,6 +307,9 @@ def ingest(min_fit=1, max_new=250, dry=False):
                 if price and price != known["price"]:
                     m2 = num(row.get("Living area m²"))
                     patch.update(price=price, price_per_m2=round(price / m2) if m2 else None); repriced += 1
+                links = other_links(row)
+                if links and feats.get(known["id"], {}).get("Other links") != links:
+                    patch["features"] = dict(feats.get(known["id"], {}), **{"Other links": links})
                 if patch:
                     sb_patch("listings", {"id": f'eq.{known["id"]}'}, patch)
             continue
