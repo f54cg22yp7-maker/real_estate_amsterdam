@@ -29,6 +29,10 @@ jobs:
       - run: pip install --quiet requests
       - name: Ingest new listings
         run: python3 pipeline/job.py ingest-queue
+      - name: Import new rows from the listings sheet
+        # Fit 4 and up only, as chosen on 24 November 2026. A sheet problem must not block the rest.
+        continue-on-error: true
+        run: python3 pipeline/sheet.py ingest --min-fit 4 --max 60
       - name: Refresh statuses
         run: python3 pipeline/job.py refresh --max 15
       - name: Regenerate shortlist

@@ -11,6 +11,7 @@ both swipe right on is a match. Matches flow to a Google Sheet for the weekly re
 | Layer | Choice |
 | --- | --- |
 | Intake | `intake/gmail_to_pand.gs` (Google Apps Script, every 5 min) posts alert emails to the `ingest-email` edge function, which queues the listing links in `intake_queue` |
+| Sheet intake | `pipeline/sheet.py ingest` reads the shared Google Sheet another assistant fills daily (public CSV export), adds rows with sheet fit 4+ that are new to Pand, matched by normalised address so a listing already voted on never returns. Postcode and coordinates come from PDOK, photos from the listing's buurtje.nl page |
 | Scheduled job | `.github/workflows/refresh.yml`, every 15 min: `job.py ingest-queue`, `refresh`, `shortlist`, `heartbeat`. The app warns when the heartbeat is older than 6 hours |
 | Parsing | `pipeline/parse_email.py` (email) and `pipeline/enrich.py` (landing page) |
 | Database | Supabase Postgres, schema in `supabase/schema.sql`, realtime on `votes` and `listings` |
