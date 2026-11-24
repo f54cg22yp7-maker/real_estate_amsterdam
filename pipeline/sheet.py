@@ -119,8 +119,52 @@ def plan():
         print("  pand key sample:", repr(l["street"]), "->", repr(addr_key(l["street"])))
 
 
+UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
+      "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
+OG_RE = re.compile(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']|<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', re.I)
+
+
+def geocode(address):
+    """Street address in Amsterdam -> (postcode, lat, lng) via the Dutch national address service."""
+    r = requests.get("https://api.pdok.nl/bzk/locatieserver/search/v3_1/free",
+                     params={"q": f"{address} Amsterdam", "fq": "type:adres", "rows": 1, "fl": "weergavenaam,postcode,centroide_ll,score"}, timeout=30)
+    r.raise_for_status()
+    docs = r.json().get("response", {}).get("docs", [])
+    if not docs:
+        return None
+    d = docs[0]
+    m = re.match(r"POINT\(([\d.]+) ([\d.]+)\)", d.get("centroide_ll", ""))
+    return {"name": d.get("weergavenaam"), "postcode": d.get("postcode"), "lng": float(m.group(1)) if m else None, "lat": float(m.group(2)) if m else None}
+
+
+def og_image(url):
+    r = requests.get(url, headers={"User-Agent": UA, "Accept-Language": "nl,en"}, timeout=30)
+    m = OG_RE.search(r.text) if r.status_code == 200 else None
+    imgs = len(re.findall(r"<img\b", r.text))
+    return r.status_code, (m.group(1) or m.group(2)) if m else None, len(r.text), imgs
+
+
+def probe():
+    rows = fetch_dicts()
+    for row in rows[:4] + rows[200:202]:
+        print(row["Address"])
+        try:
+            print("   geocode:", geocode(row["Address"]))
+        except Exception as ex:
+            print("   geocode failed:", str(ex)[:120])
+        urls = [row.get("Listing URL", "")] + [u.strip() for u in row.get("Other URLs", "").split("|") if u.strip()]
+        for u in urls[:5]:
+            try:
+                code, img, size, imgs = og_image(u)
+                print(f"   {urlparse(u).netloc}: HTTP {code}, {size} bytes, {imgs} img tags, og:image = {img[:110] if img else None}")
+            except Exception as ex:
+                print(f"   {urlparse(u).netloc}: failed {str(ex)[:100]}")
+
+
 if __name__ == "__main__":
-    if sys.argv[1:] == ["peek"]:
+    if sys.argv[1:] == ["probe"]:
+        probe()
+    elif sys.argv[1:] == ["peek"]:
         peek()
     elif sys.argv[1:] == ["plan"]:
         plan()
