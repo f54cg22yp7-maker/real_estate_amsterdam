@@ -211,7 +211,7 @@ def photos_for(urls):
         if "buurtje.nl" in u and og:
             slug = re.sub(r"-[0-9a-f]{6,}\.\w+$", "", og.rsplit("/", 1)[-1])
             gallery = ["https://buurtje.nl" + p for p in BUURTJE_IMG_RE.findall(r.text)]
-            gallery = [g for g in gallery if g.rsplit("/", 1)[-1].startswith(slug)]
+            gallery = [g for g in gallery if g.rsplit("/", 1)[-1].startswith(slug) and "/thumb/" not in g]
             return list(dict.fromkeys([og] + gallery))[:30]
         fallback = fallback or og
     return [fallback] if fallback else []
